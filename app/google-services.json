@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "81148481186",
+    "project_id": "communitychatapp-b609e",
+    "storage_bucket": "communitychatapp-b609e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:81148481186:android:d2a65aa97d414061b711fb",
+        "android_client_info": {
+          "package_name": "com.cartify"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCJPw526Cnt-IUA0Md8Qp3ydOyEmxccymg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
