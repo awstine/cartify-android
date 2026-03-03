@@ -1,24 +1,26 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     id("kotlin-parcelize")
-    id("com.google.gms.google-services")
 }
+
+val localProps = Properties().apply {
+    val localFile = rootProject.file("local.properties")
+    if (localFile.exists()) {
+        localFile.inputStream().use { load(it) }
+    }
+}
+
+val backendBaseUrl = (localProps.getProperty("BACKEND_BASE_URL")
+    ?: (project.findProperty("BACKEND_BASE_URL") as? String)
+    ?: "http://10.0.2.2:4000/api/")
 
 android {
     namespace = "com.cartify"
     compileSdk = 36
-
-    defaultConfig {
-        applicationId = "com.cartify"
-        minSdk = 26
-        targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
-
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-    }
 
     buildTypes {
         release {
@@ -35,6 +37,18 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
+    }
+
+    defaultConfig {
+        applicationId = "com.cartify"
+        minSdk = 26
+        targetSdk = 36
+        versionCode = 1
+        versionName = "1.0"
+
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "BACKEND_BASE_URL", "\"$backendBaseUrl\"")
     }
 }
 
@@ -75,10 +89,5 @@ dependencies {
 
     //material icon
     implementation("androidx.compose.material:material-icons-extended")
-
-    //firebase
-    implementation(platform("com.google.firebase:firebase-bom:34.9.0"))
-    implementation("com.google.firebase:firebase-analytics")
-    implementation("com.google.firebase:firebase-auth")
 
 }
