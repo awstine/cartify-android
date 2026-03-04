@@ -1,9 +1,24 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { cn } from "./cn";
 
 export const Drawer = ({ isOpen, onClose, title, children, side = "left" }) => {
+  const [isMounted, setIsMounted] = useState(isOpen);
+  const [isVisible, setIsVisible] = useState(false);
+
   useEffect(() => {
-    if (!isOpen) return;
+    if (isOpen) {
+      setIsMounted(true);
+      const rafId = window.requestAnimationFrame(() => setIsVisible(true));
+      return () => window.cancelAnimationFrame(rafId);
+    }
+
+    setIsVisible(false);
+    const timeoutId = window.setTimeout(() => setIsMounted(false), 300);
+    return () => window.clearTimeout(timeoutId);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isMounted) return;
     const onEsc = (e) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", onEsc);
     document.body.style.overflow = "hidden";
@@ -11,16 +26,18 @@ export const Drawer = ({ isOpen, onClose, title, children, side = "left" }) => {
       document.removeEventListener("keydown", onEsc);
       document.body.style.overflow = "";
     };
-  }, [isOpen, onClose]);
+  }, [isMounted, onClose]);
 
-  if (!isOpen) return null;
+  if (!isMounted) return null;
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/50">
+    <div className={cn("fixed inset-0 z-50 bg-slate-950/50 transition-opacity duration-300 ease-out", isVisible ? "opacity-100" : "opacity-0")}>
       <button className="absolute inset-0 h-full w-full cursor-default" onClick={onClose} aria-label="Close drawer" />
       <aside
         className={cn(
-          "absolute top-0 h-full w-[85vw] max-w-xs border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950",
-          side === "left" ? "left-0 border-r" : "right-0 border-l"
+          "absolute top-0 h-full w-[85vw] max-w-xs border-slate-200 bg-white p-4 transition-transform duration-300 ease-out dark:border-slate-800 dark:bg-slate-950",
+          side === "left"
+            ? `left-0 border-r ${isVisible ? "translate-x-0" : "-translate-x-full"}`
+            : `right-0 border-l ${isVisible ? "translate-x-0" : "translate-x-full"}`
         )}
       >
         <div className="mb-4 flex items-center justify-between">

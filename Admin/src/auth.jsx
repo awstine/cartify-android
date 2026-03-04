@@ -6,8 +6,13 @@ const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
   const [authState, setAuthState] = useState(() => {
-    const saved = localStorage.getItem(AUTH_STORAGE_KEY);
-    return saved ? JSON.parse(saved) : { token: null, user: null };
+    try {
+      const saved = localStorage.getItem(AUTH_STORAGE_KEY);
+      return saved ? JSON.parse(saved) : { token: null, user: null };
+    } catch (_err) {
+      localStorage.removeItem(AUTH_STORAGE_KEY);
+      return { token: null, user: null };
+    }
   });
 
   useEffect(() => {

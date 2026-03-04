@@ -26,6 +26,7 @@ export const ProductsPage = () => {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState(searchParams.get("category") || "");
+  const [stockFilter, setStockFilter] = useState("all");
   const [sortBy, setSortBy] = useState("newest");
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -37,7 +38,13 @@ export const ProductsPage = () => {
     setError("");
     try {
       const response = await api.get("/admin/products", {
-        params: { page, limit: LIMIT, search: search || undefined, category: category || undefined },
+        params: {
+          page,
+          limit: LIMIT,
+          search: search || undefined,
+          category: category || undefined,
+          stock: stockFilter !== "all" ? stockFilter : undefined,
+        },
       });
       setProducts(response.data.items || []);
       setTotal(response.data.total || 0);
@@ -65,7 +72,7 @@ export const ProductsPage = () => {
 
   useEffect(() => {
     fetchProducts();
-  }, [page, search, category]);
+  }, [page, search, category, stockFilter]);
 
   useEffect(() => {
     const categoryFromUrl = searchParams.get("category") || "";
@@ -83,6 +90,8 @@ export const ProductsPage = () => {
     () => [...new Set(categoryOptions.map((option) => option.value).filter(Boolean))],
     [categoryOptions]
   );
+
+  const outOfStockCount = useMemo(() => products.filter((product) => Number(product.stockQty || 0) === 0).length, [products]);
 
   const viewProducts = useMemo(() => {
     const cloned = [...products];
@@ -160,7 +169,7 @@ export const ProductsPage = () => {
     <div>
       <PageHeader
         title="Products"
-        description="Manage product catalog, pricing, and statuses."
+        description={`Manage product catalog, pricing, and statuses. Out of stock on this view: ${outOfStockCount}`}
         action={
           <Button
             onClick={() => {
@@ -197,6 +206,12 @@ export const ProductsPage = () => {
             </option>
           ))}
         </Select>
+        <Select value={stockFilter} onChange={(event) => { setPage(1); setStockFilter(event.target.value); }} aria-label="Filter by stock" className="max-w-xs">
+          <option value="all">All Stock</option>
+          <option value="out">Out of Stock</option>
+          <option value="low">Low Stock (1-5)</option>
+          <option value="in">In Stock</option>
+        </Select>
         <Select value={sortBy} onChange={(event) => setSortBy(event.target.value)} aria-label="Sort products" className="max-w-xs">
           <option value="newest">Newest</option>
           <option value="name_asc">Name A-Z</option>
@@ -215,6 +230,12 @@ export const ProductsPage = () => {
                 {cat}
               </option>
             ))}
+          </Select>
+          <Select value={stockFilter} onChange={(event) => { setPage(1); setStockFilter(event.target.value); }} aria-label="Filter by stock mobile">
+            <option value="all">All Stock</option>
+            <option value="out">Out of Stock</option>
+            <option value="low">Low Stock (1-5)</option>
+            <option value="in">In Stock</option>
           </Select>
           <Select value={sortBy} onChange={(event) => setSortBy(event.target.value)} aria-label="Sort products mobile">
             <option value="newest">Newest</option>
@@ -282,7 +303,15 @@ export const ProductsPage = () => {
                 <Td>KSh {Number(product.costPrice || 0).toFixed(2)}</Td>
                 <Td>{Number(product.stockQty || 0)}</Td>
                 <Td>
-                  <Badge tone="success">Active</Badge>
+                  {Number(product.stockQty || 0) === 0 ? (
+                    <Badge tone="danger">Out of stock</Badge>
+                  ) : Number(product.stockQty || 0) <= 5 ? (
+                    <Badge tone="warning">Low stock</Badge>
+                  ) : (
+                    <Badge tone={product.status === "draft" ? "default" : "success"}>
+                      {product.status === "draft" ? "Draft" : "Active"}
+                    </Badge>
+                  )}
                 </Td>
                 <Td className="text-right">
                   <div className="flex justify-end">

@@ -1,7 +1,7 @@
 import { cn } from "./cn";
 
 export const Table = ({ columns, rows, renderRow, rowKey, emptyMessage = "No records found." }) => (
-  <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800">
+  <div className="max-w-full overflow-x-auto overscroll-x-contain rounded-2xl border border-slate-200 dark:border-slate-800">
     <table className="w-full min-w-[760px] text-left text-sm">
       <thead className="sticky top-0 z-10 bg-slate-100/95 backdrop-blur dark:bg-slate-900/95">
         <tr>

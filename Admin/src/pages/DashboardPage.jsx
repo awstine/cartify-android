@@ -102,7 +102,7 @@ export const DashboardPage = () => {
           )}
         </Card>
 
-        <Card>
+        <Card className="min-w-0">
           <h3 className="text-base font-semibold">Recent Orders</h3>
           <p className="mt-1 text-sm text-slate-500">Latest customer checkouts.</p>
           {orders.length === 0 ? (
@@ -131,7 +131,7 @@ export const DashboardPage = () => {
       </div>
 
       <div className="mt-6">
-        <Card>
+        <Card className="min-w-0">
           <h3 className="text-base font-semibold">Low Stock Alerts</h3>
           <p className="mt-1 text-sm text-slate-500">Products with stock at or below 5 units.</p>
           {(metrics.lowStockProducts || []).length === 0 ? (

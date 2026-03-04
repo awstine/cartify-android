@@ -14,6 +14,8 @@ import { Coupon } from "../models/Coupon.js";
 import { Order } from "../models/Order.js";
 import { Product } from "../models/Product.js";
 import { User } from "../models/User.js";
+import { Cart } from "../models/Cart.js";
+import { Wishlist } from "../models/Wishlist.js";
 import { logAudit } from "../utils/audit.js";
 
 const router = Router();
@@ -172,6 +174,13 @@ router.get("/products", async (req, res) => {
   if (req.query.category) query.category = String(req.query.category);
   if (req.query.search) {
     query.title = { $regex: String(req.query.search), $options: "i" };
+  }
+  if (req.query.stock === "out") {
+    query.stockQty = 0;
+  } else if (req.query.stock === "low") {
+    query.stockQty = { $gt: 0, $lte: 5 };
+  } else if (req.query.stock === "in") {
+    query.stockQty = { $gt: 0 };
   }
 
   const [items, total] = await Promise.all([
@@ -510,6 +519,14 @@ router.get("/users", async (req, res) => {
     const pattern = String(req.query.search);
     query.$or = [{ name: { $regex: pattern, $options: "i" } }, { email: { $regex: pattern, $options: "i" } }];
   }
+  if (req.query.scope === "customers") {
+    query.role = "customer";
+  } else if (req.query.scope === "system") {
+    query.role = { $in: ["support", "manager", "admin", "super_admin"] };
+  }
+  if (req.query.role) {
+    query.role = String(req.query.role);
+  }
 
   const [items, total] = await Promise.all([
     User.find(query).select("name email role createdAt").sort({ createdAt: -1 }).skip(skip).limit(limit),
@@ -517,6 +534,119 @@ router.get("/users", async (req, res) => {
   ]);
 
   res.json({ items, total, page, limit });
+});
+
+router.post(
+  "/users",
+  requireAdminOrAbove,
+  [
+    body("name").isString().trim().isLength({ min: 2, max: 80 }),
+    body("email").isEmail().normalizeEmail(),
+    body("password").isString().isLength({ min: 6 }),
+    body("role").optional().isString().isIn(["customer", "support", "manager", "admin", "super_admin"]),
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ message: "Validation failed", errors: errors.array() });
+    }
+
+    const email = String(req.body.email).trim().toLowerCase();
+    const existing = await User.findOne({ email });
+    if (existing) return res.status(409).json({ message: "Email already in use" });
+
+    const passwordHash = await bcrypt.hash(req.body.password, 12);
+    const role = req.body.role || "customer";
+    const user = await User.create({
+      name: String(req.body.name).trim(),
+      email,
+      passwordHash,
+      role,
+    });
+
+    if (role === "customer") {
+      await Cart.create({ userId: user._id, items: [] });
+      await Wishlist.create({ userId: user._id, items: [] });
+    }
+
+    await logAudit(req, "user.create", "User", user.id, {
+      email: user.email,
+      role: user.role,
+    });
+
+    res.status(201).json({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      createdAt: user.createdAt,
+    });
+  }
+);
+
+router.patch(
+  "/users/:id/role",
+  requireAdminOrAbove,
+  [body("role").isString().isIn(["customer", "support", "manager", "admin", "super_admin"])],
+  async (req, res) => {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ message: "Invalid user id" });
+    }
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ message: "Validation failed", errors: errors.array() });
+    }
+
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    const previousRole = user.role;
+    user.role = req.body.role;
+    await user.save();
+
+    if (user.role === "customer") {
+      await Cart.findOneAndUpdate({ userId: user._id }, { $setOnInsert: { userId: user._id, items: [] } }, { upsert: true, new: true });
+      await Wishlist.findOneAndUpdate({ userId: user._id }, { $setOnInsert: { userId: user._id, items: [] } }, { upsert: true, new: true });
+    }
+
+    await logAudit(req, "user.role.update", "User", user.id, {
+      previousRole,
+      nextRole: user.role,
+      email: user.email,
+    });
+
+    res.json({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      createdAt: user.createdAt,
+    });
+  }
+);
+
+router.delete("/users/:id", requireAdminOrAbove, async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    return res.status(400).json({ message: "Invalid user id" });
+  }
+  if (String(req.params.id) === String(req.user.id)) {
+    return res.status(400).json({ message: "You cannot delete your own account." });
+  }
+
+  const deleted = await User.findByIdAndDelete(req.params.id);
+  if (!deleted) return res.status(404).json({ message: "User not found" });
+
+  await Promise.all([
+    Cart.findOneAndDelete({ userId: deleted._id }),
+    Wishlist.findOneAndDelete({ userId: deleted._id }),
+  ]);
+
+  await logAudit(req, "user.delete", "User", deleted.id, {
+    email: deleted.email,
+    role: deleted.role,
+  });
+
+  res.json({ message: "User deleted" });
 });
 
 router.get("/sales", async (req, res) => {
