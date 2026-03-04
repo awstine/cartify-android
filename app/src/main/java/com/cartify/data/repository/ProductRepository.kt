@@ -95,4 +95,5 @@ private fun BackendProduct.resolvedImageUrl(): String {
     return compact
         .replace("http://localhost:4000", backendHost, ignoreCase = true)
         .replace("http://127.0.0.1:4000", backendHost, ignoreCase = true)
+        .replace("https://ecommerce-adroid-app.onrender.com", backendHost, ignoreCase = true)
 }

@@ -18,6 +18,16 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true, service: "cartify-backend" });
 });
 
+app.get("/", (_req, res) => {
+  res.json({
+    ok: true,
+    service: "cartify-backend",
+    message: "Backend is running",
+    health: "/health",
+    apiBase: "/api",
+  });
+});
+
 app.use("/api/auth", authRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/cart", cartRoutes);
