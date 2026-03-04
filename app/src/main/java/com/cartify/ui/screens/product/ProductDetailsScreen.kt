@@ -1,8 +1,10 @@
 package com.cartify.ui.screens.product
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -16,20 +18,28 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,6 +58,7 @@ import com.cartify.ui.components.SoftCard
 import com.cartify.ui.theme.AppRadius
 import com.cartify.ui.theme.AppSpacing
 import com.cartify.ui.theme.TextSecondary
+import kotlinx.coroutines.launch
 
 @Composable
 fun ProductDetailsScreen(
@@ -56,6 +67,8 @@ fun ProductDetailsScreen(
     isFavorite: Boolean,
     onToggleFavorite: () -> Unit,
     onBack: () -> Unit,
+    cartItemCount: Int,
+    onOpenCart: () -> Unit,
     onAddToCart: (Product) -> Unit,
     onOrderNow: (Product) -> Unit,
     onSubmitReview: (Product, Int) -> Unit,
@@ -77,15 +90,33 @@ fun ProductDetailsScreen(
     var selectedColor by remember { mutableStateOf(0) }
     var selectedSize by remember { mutableStateOf("M") }
     var selectedReviewStars by remember { mutableStateOf(5) }
+    var selectedImageIndex by remember { mutableStateOf(0) }
+    val galleryImages = remember(product.imageUrl, product.imageUrls) {
+        (product.imageUrls + listOf(product.imageUrl))
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .ifEmpty { listOf(product.imageUrl) }
+    }
+    val galleryState = rememberLazyListState()
+    val galleryScope = rememberCoroutineScope()
     val inStock = product.stock > 0
 
-    LazyColumn(
+    LaunchedEffect(galleryState.firstVisibleItemIndex) {
+        selectedImageIndex = galleryState.firstVisibleItemIndex.coerceIn(0, galleryImages.lastIndex)
+    }
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+    ) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
             .padding(AppSpacing.lg),
         verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(bottom = 18.dp)
+        contentPadding = PaddingValues(bottom = 124.dp)
     ) {
         item {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -108,20 +139,57 @@ fun ProductDetailsScreen(
 
         item {
             SoftCard(modifier = Modifier.fillMaxWidth()) {
-                LazyRow(
-                    contentPadding = PaddingValues(14.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    items(listOf(1, 2, 3)) {
+                    LazyRow(
+                        state = galleryState,
+                        contentPadding = PaddingValues(14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        itemsIndexed(galleryImages) { index, imageUrl ->
                         ProductImage(
-                            model = product.imageUrl,
-                            contentDescription = product.title,
+                            model = imageUrl,
+                            contentDescription = "${product.title} image ${index + 1}",
                             contentScale = ContentScale.Crop,
                             modifier = Modifier
                                 .size(300.dp)
                                 .clip(RoundedCornerShape(AppRadius.lg))
                                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
                         )
+                    }
+                }
+                    LazyRow(
+                        modifier = Modifier.padding(horizontal = 14.dp).padding(bottom = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        itemsIndexed(galleryImages) { index, imageUrl ->
+                            ProductImage(
+                                model = imageUrl,
+                                contentDescription = "Thumbnail ${index + 1}",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(62.dp)
+                                    .border(
+                                        width = if (selectedImageIndex == index) 2.dp else 1.dp,
+                                        color = if (selectedImageIndex == index) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
+                                        },
+                                        shape = RoundedCornerShape(10.dp)
+                                    )
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                                    .clickable {
+                                        selectedImageIndex = index
+                                        galleryScope.launch {
+                                            galleryState.animateScrollToItem(index)
+                                        }
+                                    }
+                            )
+                        }
                     }
                 }
             }
@@ -202,20 +270,6 @@ fun ProductDetailsScreen(
 
                 Text(product.description, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
 
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                    AppPrimaryButton(
-                        text = if (inStock) "Add to cart" else "Out of stock",
-                        onClick = { onAddToCart(product) },
-                        modifier = Modifier.weight(1f),
-                        enabled = inStock
-                    )
-                    AppPrimaryButton(
-                        text = "Order now",
-                        onClick = { onOrderNow(product) },
-                        modifier = Modifier.weight(1f),
-                        enabled = inStock
-                    )
-                }
             }
         }
 
@@ -269,5 +323,53 @@ fun ProductDetailsScreen(
                 }
             }
         }
+    }
+
+    Row(
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(50.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f))
+                .clickable(onClick = onOpenCart),
+            contentAlignment = Alignment.Center
+        ) {
+            if (cartItemCount > 0) {
+                BadgedBox(badge = { Badge { Text(cartItemCount.toString()) } }) {
+                    Icon(
+                        imageVector = Icons.Default.ShoppingCart,
+                        contentDescription = "Open cart",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            } else {
+                Icon(
+                    imageVector = Icons.Default.ShoppingCart,
+                    contentDescription = "Open cart",
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+        AppPrimaryButton(
+            text = if (inStock) "Add to cart" else "Out of stock",
+            onClick = { onAddToCart(product) },
+            modifier = Modifier.weight(1f),
+            enabled = inStock
+        )
+        AppPrimaryButton(
+            text = "Order now",
+            onClick = { onOrderNow(product) },
+            modifier = Modifier.weight(1f),
+            enabled = inStock
+        )
+    }
     }
 }

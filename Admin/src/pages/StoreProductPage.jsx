@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { api } from "../api";
+import { api, consumePrefetchedGet, prefetchGet } from "../api";
 import { useAuth } from "../auth";
 import { Button } from "../components/ui/Button";
 import { Field, Select, Textarea } from "../components/ui/Field";
@@ -20,13 +20,21 @@ export const StoreProductPage = () => {
   const [rating, setRating] = useState("5");
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [catalogProducts, setCatalogProducts] = useState([]);
 
   const loadProduct = async () => {
+    const prefetched = consumePrefetchedGet(`/products/${id}`);
+    if (prefetched) {
+      setProduct(prefetched);
+      setLoading(false);
+      setError("");
+      return;
+    }
     setLoading(true);
     setError("");
     try {
-      const response = await api.get(`/products/${id}`);
-      setProduct(response.data);
+      const data = await prefetchGet(`/products/${id}`, { ttlMs: 5 * 60_000 });
+      setProduct(data);
     } catch (err) {
       setError(err?.response?.data?.message || "Failed to load product");
     } finally {
@@ -37,6 +45,22 @@ export const StoreProductPage = () => {
   useEffect(() => {
     loadProduct();
   }, [id]);
+
+  useEffect(() => {
+    let active = true;
+    const loadCatalogProducts = async () => {
+      try {
+        const data = await prefetchGet("/products", { ttlMs: 5 * 60_000 });
+        if (active) setCatalogProducts(data || []);
+      } catch (_err) {
+        if (active) setCatalogProducts([]);
+      }
+    };
+    loadCatalogProducts();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const avgRating = useMemo(() => {
     const reviews = product?.reviews || [];
@@ -57,6 +81,15 @@ export const StoreProductPage = () => {
     }
   };
 
+  const openRelatedProduct = async (productId) => {
+    try {
+      await prefetchGet(`/products/${productId}`, { withProgress: true, ttlMs: 5 * 60_000 });
+    } catch (_err) {
+      // Ignore and navigate anyway.
+    }
+    navigate(`/product/${productId}`);
+  };
+
   const submitReview = async (event) => {
     event.preventDefault();
     if (!isAuthenticated) {
@@ -68,6 +101,7 @@ export const StoreProductPage = () => {
       await api.post(`/products/${id}/reviews`, { rating: Number(rating), comment });
       showToast({ type: "success", title: "Review submitted" });
       setComment("");
+      await prefetchGet(`/products/${id}`, { force: true, ttlMs: 5 * 60_000 });
       await loadProduct();
     } catch (err) {
       showToast({
@@ -80,19 +114,35 @@ export const StoreProductPage = () => {
     }
   };
 
-  if (loading) return <LoadingState label="Loading product..." />;
+  if (loading) return <LoadingState label="Loading product..." showSpinner={false} />;
   if (error) return <ErrorState message={error} action={<Button onClick={loadProduct}>Retry</Button>} />;
   if (!product) return <EmptyState title="Product not found" description="The product may have been removed." />;
 
   const isOut = Number(product.stockQty || 0) <= 0;
   const imageList = (product.images || []).length > 0 ? product.images : [product.imageUrl].filter(Boolean);
+  const sameCategoryProducts = catalogProducts.filter(
+    (item) => item?._id !== product._id && item?.status !== "draft" && String(item?.category || "") === String(product.category || "")
+  );
+  const fallbackProducts = catalogProducts.filter((item) => item?._id !== product._id && item?.status !== "draft");
+  const relatedProducts = (sameCategoryProducts.length > 0 ? sameCategoryProducts : fallbackProducts).slice(0, 4);
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <div>
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-          {imageList[0] ? (
-            <img src={imageList[0]} alt={product.title} className="h-[360px] w-full object-cover" />
+          {imageList.length > 0 ? (
+            <>
+              <div className="flex snap-x snap-mandatory overflow-x-auto">
+                {imageList.map((imageUrl, index) => (
+                  <div key={`${imageUrl}-${index}`} className="w-full min-w-full snap-start">
+                    <img src={imageUrl} alt={`${product.title} image ${index + 1}`} className="h-[360px] w-full object-cover" />
+                  </div>
+                ))}
+              </div>
+              {imageList.length > 1 ? (
+                <p className="px-4 py-2 text-xs text-slate-500">Scroll right to view more images ({imageList.length}).</p>
+              ) : null}
+            </>
           ) : (
             <div className="flex h-[360px] items-center justify-center text-slate-500">No image</div>
           )}
@@ -160,6 +210,48 @@ export const StoreProductPage = () => {
           )}
         </div>
       </div>
+
+      {relatedProducts.length > 0 ? (
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 lg:col-span-2">
+          <div className="flex items-end justify-between gap-2">
+            <h2 className="text-lg font-semibold text-slate-900">More Products To Explore</h2>
+            <p className="text-xs text-slate-500">{sameCategoryProducts.length > 0 ? `More in ${product.category}` : "Based on store catalog"}</p>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+            {relatedProducts.map((item) => {
+              const relatedOut = Number(item.stockQty || 0) <= 0;
+              return (
+                <article
+                  key={item._id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => openRelatedProduct(item._id)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      openRelatedProduct(item._id);
+                    }
+                  }}
+                  className="cursor-pointer rounded-xl border border-slate-200 p-3 transition hover:border-slate-300"
+                >
+                  <div className="aspect-square overflow-hidden rounded-lg bg-slate-100">
+                    {item.imageUrl ? (
+                      <img src={item.imageUrl} alt={item.title} className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="flex h-full items-center justify-center text-xs text-slate-500">No image</div>
+                    )}
+                  </div>
+                  <p className="mt-2 truncate text-sm font-semibold text-slate-900">{item.title}</p>
+                  <p className="text-xs text-slate-600">{formatMoney(item.salePrice > 0 ? item.salePrice : item.price)}</p>
+                  <p className={`mt-1 text-xs ${relatedOut ? "text-red-600" : "text-slate-500"}`}>
+                    {relatedOut ? "Out of stock" : "In stock"}
+                  </p>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 };

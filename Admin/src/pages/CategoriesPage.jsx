@@ -60,12 +60,18 @@ export const CategoriesPage = () => {
 
   const handleModalSubmit = async (values) => {
     setSubmitting(true);
+    const payload = {
+      name: values.name,
+      description: values.description || "",
+      imageUrl: values.imageUrl || "",
+      parentId: values.parentId || null,
+    };
     try {
       if (editingCategory?._id) {
-        await api.put(`/admin/categories/${editingCategory._id}`, { name: values.name });
+        await api.put(`/admin/categories/${editingCategory._id}`, payload);
         showToast({ type: "success", title: "Category updated" });
       } else {
-        await api.post("/admin/categories", { name: values.name, description: values.parentCategory || "" });
+        await api.post("/admin/categories", payload);
         showToast({ type: "success", title: "Category created" });
       }
       setIsModalOpen(false);
@@ -77,6 +83,20 @@ export const CategoriesPage = () => {
       setSubmitting(false);
     }
   };
+
+  const categoryOptions = useMemo(() => {
+    const byId = new Map(categories.map((item) => [item._id, item]));
+    return categories
+      .filter((item) => item._id !== editingCategory?._id)
+      .map((item) => {
+        const parent = item.parentId && typeof item.parentId === "object" ? item.parentId : byId.get(item.parentId);
+        return {
+          value: item._id,
+          label: parent?.name ? `${parent.name} / ${item.name}` : item.name,
+        };
+      })
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [categories, editingCategory?._id]);
 
   const handleDelete = async (id) => {
     if (!window.confirm("Delete this category?")) return;
@@ -139,7 +159,9 @@ export const CategoriesPage = () => {
       {!loading && !error && filteredCategories.length > 0 ? (
         <Table
           columns={[
+            { key: "image", label: "Image" },
             { key: "name", label: "Name" },
+            { key: "parent", label: "Parent" },
             { key: "slug", label: "Slug" },
             { key: "status", label: "Status" },
             { key: "actions", label: "Actions", className: "text-right" },
@@ -148,6 +170,13 @@ export const CategoriesPage = () => {
           rowKey={(category) => category._id}
           renderRow={(category) => (
             <>
+              <Td>
+                {category.imageUrl ? (
+                  <img src={category.imageUrl} alt={category.name} className="h-12 w-12 rounded-lg border border-slate-200 object-cover" />
+                ) : (
+                  <div className="flex h-12 w-12 items-center justify-center rounded-lg border border-slate-200 bg-slate-100 text-xs text-slate-500">N/A</div>
+                )}
+              </Td>
               <Td>
                 <button
                   type="button"
@@ -158,9 +187,10 @@ export const CategoriesPage = () => {
                 </button>
                 <p className="text-xs text-slate-500">{category.description || "No description"}</p>
               </Td>
+              <Td>{category.parentId?.name || "None"}</Td>
               <Td>{category.slug}</Td>
               <Td>
-                <Badge tone="success">Active</Badge>
+                <Badge tone={category.parentId ? "info" : "success"}>{category.parentId ? "Subcategory" : "Category"}</Badge>
               </Td>
               <Td className="text-right">
                 <div className="flex justify-end">
@@ -187,7 +217,7 @@ export const CategoriesPage = () => {
         onSubmit={handleModalSubmit}
         initialValues={editingCategory}
         loading={submitting}
-        categoryOptions={categories.map((item) => item.name)}
+        categoryOptions={categoryOptions}
       />
     </div>
   );

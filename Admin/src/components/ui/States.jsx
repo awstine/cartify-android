@@ -1,8 +1,8 @@
 import { Card } from "./Surface";
 
-export const LoadingState = ({ label = "Loading..." }) => (
+export const LoadingState = ({ label = "Loading...", showSpinner = true }) => (
   <Card className="flex items-center gap-3">
-    <span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700" />
+    {showSpinner ? <span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700" /> : null}
     <p className="text-sm text-slate-600 dark:text-slate-300">{label}</p>
   </Card>
 );

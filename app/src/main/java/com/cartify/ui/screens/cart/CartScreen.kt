@@ -12,7 +12,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -60,6 +62,14 @@ fun CartScreen(
             productState.products.find { it.id == item.productId }?.let { CartItemUiModel(it, item.quantity) }
         }
     }
+    val recommendationProducts = remember(cartItems, productState.products) {
+        val inCartIds = cartItems.map { it.product.id }.toSet()
+        productState.products
+            .asSequence()
+            .filter { it.id !in inCartIds }
+            .take(10)
+            .toList()
+    }
 
     val subtotal = cartItems.sumOf { it.product.price * it.quantity }
     val shipping = if (cartItems.isEmpty()) 0.0 else 6.99
@@ -73,10 +83,7 @@ fun CartScreen(
             .background(MaterialTheme.colorScheme.background)
             .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("CART", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
-            TextButton(onClick = cartViewModel::clearCart) { Text("Delete all", color = MaterialTheme.colorScheme.error) }
-        }
+        Text("Cart", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
 
         if (cartItems.isEmpty()) {
             AppEmptyState("Cart is empty", "Add products to continue.")
@@ -135,6 +142,54 @@ fun CartScreen(
                             }
                             TextButton(onClick = { cartViewModel.removeItem(item.product.id) }) {
                                 Icon(Icons.Default.DeleteOutline, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    }
+                }
+
+                if (recommendationProducts.isNotEmpty()) {
+                    item {
+                        Text(
+                            "More products",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(top = 6.dp, bottom = 4.dp)
+                        )
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(recommendationProducts, key = { it.id }) { product ->
+                                SoftCard(
+                                    modifier = Modifier
+                                        .width(170.dp)
+                                        .clickable { onProductClick(product.id) }
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        ProductImage(
+                                            model = product.imageUrl,
+                                            contentDescription = product.title,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(96.dp)
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                                        )
+                                        Text(
+                                            product.title,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        Text(
+                                            "KSh ${"%.2f".format(product.price)}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

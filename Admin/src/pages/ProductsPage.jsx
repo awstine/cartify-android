@@ -69,7 +69,7 @@ export const ProductsPage = () => {
       const data = prefetched || (await api.get("/admin/categories")).data || [];
       const mapped = (data || []).map((category) => ({
         value: category.slug,
-        label: category.name,
+        label: category.parentId?.name ? `${category.parentId.name} / ${category.name}` : category.name,
       }));
       setCategoryOptions(mapped);
     } catch (_err) {
@@ -92,11 +92,6 @@ export const ProductsPage = () => {
   useEffect(() => {
     fetchCategories();
   }, []);
-
-  const categories = useMemo(
-    () => [...new Set(categoryOptions.map((option) => option.value).filter(Boolean))],
-    [categoryOptions]
-  );
 
   const outOfStockCount = useMemo(() => products.filter((product) => Number(product.stockQty || 0) === 0).length, [products]);
 
@@ -207,9 +202,9 @@ export const ProductsPage = () => {
           className="max-w-xs"
         >
           <option value="">All Categories</option>
-          {categories.map((cat) => (
-            <option key={cat} value={cat}>
-              {cat}
+          {categoryOptions.map((cat) => (
+            <option key={cat.value} value={cat.value}>
+              {cat.label}
             </option>
           ))}
         </Select>
@@ -232,9 +227,9 @@ export const ProductsPage = () => {
           <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search products" aria-label="Search products mobile" />
           <Select value={category} onChange={(event) => setCategoryFilter(event.target.value)} aria-label="Filter by category mobile">
             <option value="">All Categories</option>
-            {categories.map((cat) => (
-              <option key={cat} value={cat}>
-                {cat}
+            {categoryOptions.map((cat) => (
+              <option key={cat.value} value={cat.value}>
+                {cat.label}
               </option>
             ))}
           </Select>

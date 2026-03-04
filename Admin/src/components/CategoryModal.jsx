@@ -3,13 +3,21 @@ import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Button } from "./ui/Button";
-import { Field, Input, Select } from "./ui/Field";
+import { Field, Input, Select, Textarea } from "./ui/Field";
 import { Modal } from "./ui/Modal";
 
 const schema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
-  parentCategory: z.string().optional(),
-  status: z.enum(["active", "draft"]),
+  description: z.string().optional(),
+  parentId: z.string().optional(),
+  imageUrl: z
+    .string()
+    .optional()
+    .or(z.literal(""))
+    .refine(
+      (value) => !value || /^https?:\/\//i.test(value) || /^data:image\/[a-zA-Z+.-]+;base64,/.test(value),
+      "Enter a valid image URL or upload an image file"
+    ),
 });
 
 export const CategoryModal = ({ isOpen, onClose, onSubmit, initialValues, loading, categoryOptions = [] }) => {
@@ -17,23 +25,39 @@ export const CategoryModal = ({ isOpen, onClose, onSubmit, initialValues, loadin
     register,
     handleSubmit,
     reset,
+    setValue,
+    watch,
     formState: { errors },
   } = useForm({
     resolver: zodResolver(schema),
     defaultValues: {
       name: "",
-      parentCategory: "",
-      status: "active",
+      description: "",
+      parentId: "",
+      imageUrl: "",
     },
   });
 
   useEffect(() => {
     reset({
       name: initialValues?.name || "",
-      parentCategory: initialValues?.parentCategory || "",
-      status: initialValues?.status || "active",
+      description: initialValues?.description || "",
+      parentId: initialValues?.parentId?._id || initialValues?.parentId || "",
+      imageUrl: initialValues?.imageUrl || "",
     });
   }, [initialValues, reset, isOpen]);
+
+  const imageUrlValue = watch("imageUrl");
+
+  const handleImageFileChange = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setValue("imageUrl", String(reader.result || ""), { shouldDirty: true, shouldValidate: true });
+    };
+    reader.readAsDataURL(file);
+  };
 
   return (
     <Modal
@@ -52,40 +76,29 @@ export const CategoryModal = ({ isOpen, onClose, onSubmit, initialValues, loadin
       }
     >
       <form id="category-form" onSubmit={handleSubmit(onSubmit)} className="grid gap-4">
-        <Field
-          label="Category Name"
-          htmlFor="cat-name"
-          helperText="Required"
-          error={errors.name?.message}
-        >
+        <Field label="Category Name" htmlFor="cat-name" helperText="Required" error={errors.name?.message}>
           <Input id="cat-name" {...register("name")} />
         </Field>
-        <Field
-          label="Parent Category"
-          htmlFor="parentCategory"
-          helperText="Optional"
-          error={errors.parentCategory?.message}
-        >
-          <Select id="parentCategory" {...register("parentCategory")}>
+        <Field label="Parent Category" htmlFor="parentId" helperText="Optional" error={errors.parentId?.message}>
+          <Select id="parentId" {...register("parentId")}>
             <option value="">None</option>
             {categoryOptions.map((option) => (
-              <option key={option} value={option}>
-                {option}
+              <option key={option.value} value={option.value}>
+                {option.label}
               </option>
             ))}
           </Select>
         </Field>
-        <Field
-          label="Status"
-          htmlFor="cat-status"
-          helperText="Required"
-          error={errors.status?.message}
-        >
-          <Select id="cat-status" {...register("status")}>
-            <option value="active">Active</option>
-            <option value="draft">Draft</option>
-          </Select>
+        <Field label="Description" htmlFor="cat-description" error={errors.description?.message}>
+          <Textarea id="cat-description" rows={3} {...register("description")} />
         </Field>
+        <Field label="Category Image URL" htmlFor="cat-image-url" error={errors.imageUrl?.message}>
+          <Input id="cat-image-url" {...register("imageUrl")} />
+        </Field>
+        <Field label="Upload Category Image" htmlFor="cat-image-file" helperText="Optional: upload image from your device">
+          <Input id="cat-image-file" type="file" accept="image/*" onChange={handleImageFileChange} />
+        </Field>
+        {imageUrlValue ? <img src={imageUrlValue} alt="Category preview" className="h-32 w-full rounded-xl border border-slate-200 object-cover" /> : null}
       </form>
     </Modal>
   );

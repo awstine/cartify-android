@@ -2,9 +2,11 @@ import mongoose from "mongoose";
 
 const categorySchema = new mongoose.Schema(
   {
-    name: { type: String, required: true, trim: true, unique: true },
+    name: { type: String, required: true, trim: true },
     slug: { type: String, required: true, trim: true, unique: true, index: true },
     description: { type: String, default: "" },
+    imageUrl: { type: String, default: "" },
+    parentId: { type: mongoose.Schema.Types.ObjectId, ref: "Category", default: null, index: true },
   },
   { timestamps: true }
 );

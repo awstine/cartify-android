@@ -35,6 +35,43 @@ const toSlug = (value) =>
     .replace(/\s+/g, "-")
     .replace(/-+/g, "-");
 
+const normalizeCategoryImageUrl = (value) => {
+  if (typeof value !== "string") return "";
+  return value.trim();
+};
+
+const toCategoryParentId = (value) => {
+  if (value === undefined || value === null || value === "") return null;
+  if (!mongoose.Types.ObjectId.isValid(value)) return "invalid";
+  return new mongoose.Types.ObjectId(value);
+};
+
+const generateUniqueCategorySlug = async (name, { excludeId = null } = {}) => {
+  const base = toSlug(name) || "category";
+  let attempt = base;
+  let suffix = 2;
+  // Ensure globally unique slugs so product.category (string slug) remains unambiguous.
+  while (true) {
+    const query = { slug: attempt };
+    if (excludeId) query._id = { $ne: excludeId };
+    const exists = await Category.exists(query);
+    if (!exists) return attempt;
+    attempt = `${base}-${suffix}`;
+    suffix += 1;
+  }
+};
+
+const isDescendantCategory = async (categoryId, potentialParentId) => {
+  let cursorId = potentialParentId;
+  while (cursorId) {
+    if (String(cursorId) === String(categoryId)) return true;
+    const parent = await Category.findById(cursorId).select("parentId");
+    if (!parent?.parentId) return false;
+    cursorId = parent.parentId;
+  }
+  return false;
+};
+
 router.get("/dashboard", async (_req, res) => {
   const startDate = new Date();
   startDate.setUTCHours(0, 0, 0, 0);
@@ -341,14 +378,19 @@ router.delete("/products/:id", requireAdminOrAbove, async (req, res) => {
 });
 
 router.get("/categories", async (_req, res) => {
-  const categories = await Category.find().sort({ name: 1 });
+  const categories = await Category.find().populate("parentId", "name slug").sort({ name: 1 });
   res.json(categories);
 });
 
 router.post(
   "/categories",
   requireManagerOrAbove,
-  [body("name").isString().trim().isLength({ min: 2 }), body("description").optional().isString()],
+  [
+    body("name").isString().trim().isLength({ min: 2 }),
+    body("description").optional().isString(),
+    body("imageUrl").optional().isString(),
+    body("parentId").optional({ nullable: true }).isString(),
+  ],
   async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -356,12 +398,28 @@ router.post(
     }
 
     const name = req.body.name.trim();
-    const slug = toSlug(name);
-    const existing = await Category.findOne({ $or: [{ name }, { slug }] });
-    if (existing) return res.status(409).json({ message: "Category already exists" });
+    const parentId = toCategoryParentId(req.body.parentId);
+    if (parentId === "invalid") {
+      return res.status(400).json({ message: "Invalid parent category id" });
+    }
+    if (parentId) {
+      const parent = await Category.findById(parentId).select("_id");
+      if (!parent) return res.status(404).json({ message: "Parent category not found" });
+    }
 
-    const category = await Category.create({ name, slug, description: req.body.description || "" });
-    await logAudit(req, "category.create", "Category", category.id, { name: category.name, slug: category.slug });
+    const slug = await generateUniqueCategorySlug(name);
+    const category = await Category.create({
+      name,
+      slug,
+      description: req.body.description || "",
+      imageUrl: normalizeCategoryImageUrl(req.body.imageUrl),
+      parentId: parentId || null,
+    });
+    await logAudit(req, "category.create", "Category", category.id, {
+      name: category.name,
+      slug: category.slug,
+      parentId: category.parentId ? String(category.parentId) : null,
+    });
     res.status(201).json(category);
   }
 );
@@ -369,7 +427,12 @@ router.post(
 router.put(
   "/categories/:id",
   requireManagerOrAbove,
-  [body("name").optional().isString().trim().isLength({ min: 2 }), body("description").optional().isString()],
+  [
+    body("name").optional().isString().trim().isLength({ min: 2 }),
+    body("description").optional().isString(),
+    body("imageUrl").optional().isString(),
+    body("parentId").optional({ nullable: true }).isString(),
+  ],
   async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
       return res.status(400).json({ message: "Invalid category id" });
@@ -380,17 +443,35 @@ router.put(
       return res.status(400).json({ message: "Validation failed", errors: errors.array() });
     }
 
+    const existingCategory = await Category.findById(req.params.id);
+    if (!existingCategory) return res.status(404).json({ message: "Category not found" });
+
     const updates = {};
     if (typeof req.body.description === "string") updates.description = req.body.description;
+    if (typeof req.body.imageUrl === "string") updates.imageUrl = normalizeCategoryImageUrl(req.body.imageUrl);
+    if (req.body.parentId !== undefined) {
+      const parentId = toCategoryParentId(req.body.parentId);
+      if (parentId === "invalid") {
+        return res.status(400).json({ message: "Invalid parent category id" });
+      }
+      if (parentId && String(parentId) === String(req.params.id)) {
+        return res.status(400).json({ message: "A category cannot be its own parent" });
+      }
+      if (parentId) {
+        const parent = await Category.findById(parentId).select("_id");
+        if (!parent) return res.status(404).json({ message: "Parent category not found" });
+        const wouldCreateCycle = await isDescendantCategory(req.params.id, parentId);
+        if (wouldCreateCycle) {
+          return res.status(400).json({ message: "Invalid parent relationship" });
+        }
+      }
+      updates.parentId = parentId || null;
+    }
+
+    let oldSlug = existingCategory.slug;
     if (typeof req.body.name === "string") {
       const name = req.body.name.trim();
-      const slug = toSlug(name);
-      const existing = await Category.findOne({
-        _id: { $ne: req.params.id },
-        $or: [{ name }, { slug }],
-      });
-      if (existing) return res.status(409).json({ message: "Category already exists" });
-
+      const slug = await generateUniqueCategorySlug(name, { excludeId: req.params.id });
       updates.name = name;
       updates.slug = slug;
     }
@@ -399,10 +480,17 @@ router.put(
       new: true,
       runValidators: true,
     });
-
     if (!category) return res.status(404).json({ message: "Category not found" });
 
-    await logAudit(req, "category.update", "Category", category.id, { name: category.name, slug: category.slug });
+    if (updates.slug && oldSlug !== updates.slug) {
+      await Product.updateMany({ category: oldSlug }, { $set: { category: updates.slug } });
+    }
+
+    await logAudit(req, "category.update", "Category", category.id, {
+      name: category.name,
+      slug: category.slug,
+      parentId: category.parentId ? String(category.parentId) : null,
+    });
 
     res.json(category);
   }
@@ -416,6 +504,7 @@ router.delete("/categories/:id", requireAdminOrAbove, async (req, res) => {
   const category = await Category.findByIdAndDelete(req.params.id);
   if (!category) return res.status(404).json({ message: "Category not found" });
 
+  await Category.updateMany({ parentId: category._id }, { $set: { parentId: null } });
   await Product.updateMany({ category: category.slug }, { $set: { category: "general" } });
   await logAudit(req, "category.delete", "Category", category.id, { name: category.name, slug: category.slug });
   res.json({ message: "Category deleted" });

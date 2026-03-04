@@ -2,6 +2,7 @@ package com.cartify.ui.screens.product
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,11 +21,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.MaterialTheme
@@ -50,7 +54,6 @@ import com.cartify.ui.components.AppBottomSheet
 import com.cartify.ui.components.AppEmptyState
 import com.cartify.ui.components.AppErrorState
 import com.cartify.ui.components.AppPrimaryButton
-import com.cartify.ui.components.AppTextInput
 import com.cartify.ui.components.CategoryPill
 import com.cartify.ui.components.ProductImage
 import com.cartify.ui.components.ProductCardSkeleton
@@ -61,8 +64,9 @@ import com.cartify.ui.theme.TextSecondary
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import java.util.Locale
+import kotlin.math.min
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ProductScreen(
     viewModel: ProductViewModel,
@@ -73,11 +77,20 @@ fun ProductScreen(
     onCreateAccountRequested: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    var showSearchSheet by remember { mutableStateOf(false) }
     var showGuestSheet by remember { mutableStateOf(false) }
     val homeCategories = remember(uiState.products, uiState.isLoading) { viewModel.allCategories() }
     val heroProducts = uiState.products.take(8)
     val heroListState = rememberLazyListState()
+    val productFeedListState = rememberLazyListState()
+    var visibleCount by remember(
+        uiState.searchQuery,
+        uiState.selectedCategory,
+        uiState.selectedSort,
+        uiState.products.size
+    ) { mutableStateOf(12) }
+    val visibleProducts = remember(uiState.products, visibleCount) {
+        uiState.products.take(visibleCount.coerceAtLeast(1))
+    }
     val pullToRefreshState = rememberPullToRefreshState()
 
     LaunchedEffect(heroProducts.size) {
@@ -105,8 +118,8 @@ fun ProductScreen(
             modifier = Modifier.fillMaxSize()
         ) {
             when {
-                uiState.isLoading -> LoadingState()
-                uiState.error != null -> {
+                uiState.isLoading && uiState.products.isEmpty() -> LoadingState()
+                uiState.error != null && uiState.products.isEmpty() -> {
                     AppErrorState(
                         message = uiState.error ?: "Unable to load products",
                         onRetry = viewModel::retryLoad
@@ -114,19 +127,66 @@ fun ProductScreen(
                 }
                 else -> {
                     LazyColumn(
+                        state = productFeedListState,
                         modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(14.dp),
-                        contentPadding = PaddingValues(bottom = 90.dp)
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        contentPadding = PaddingValues(bottom = 72.dp)
                     ) {
+                        stickyHeader {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(MaterialTheme.colorScheme.background)
+                                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedTextField(
+                                    value = uiState.searchQuery,
+                                    onValueChange = viewModel::onSearchQueryChanged,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    placeholder = {
+                                        Text(
+                                            "Search products...",
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.Search,
+                                            contentDescription = "Search products",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    },
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                                        focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
+                                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
+                                    )
+                                )
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    items(ProductSortOption.values().toList()) { option ->
+                                        CategoryPill(
+                                            text = option.name.replace("To", " to "),
+                                            selected = option == uiState.selectedSort,
+                                            onClick = { viewModel.onSortSelected(option) }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
                         if (uiState.products.isNotEmpty()) {
                             item {
                                 LazyRow(
                                     state = heroListState,
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(top = 6.dp),
-                                    contentPadding = PaddingValues(horizontal = AppSpacing.lg),
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                        .padding(top = 2.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     items(heroProducts, key = { it.id }) { hero ->
                                         HeroProductCard(
@@ -141,8 +201,8 @@ fun ProductScreen(
                         item {
                             LazyRow(
                                 modifier = Modifier.fillMaxWidth(),
-                                contentPadding = PaddingValues(horizontal = AppSpacing.lg),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                contentPadding = PaddingValues(horizontal = 12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 items(homeCategories) { category ->
                                     CategoryPill(
@@ -157,13 +217,13 @@ fun ProductScreen(
                         if (uiState.products.isEmpty()) {
                             item { AppEmptyState("No products", "Try another category or search.") }
                         } else {
-                            val rows = uiState.products.chunked(2)
+                            val rows = visibleProducts.chunked(2)
                             items(rows) { rowProducts ->
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = AppSpacing.lg),
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                        .padding(horizontal = 12.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     rowProducts.forEach { product ->
                                         HomeProductCard(
@@ -177,32 +237,25 @@ fun ProductScreen(
                                     }
                                 }
                             }
+
+                            if (visibleCount < uiState.products.size) {
+                                item(key = "load-more-trigger") {
+                                    LaunchedEffect(visibleCount, uiState.products.size) {
+                                        visibleCount = min(visibleCount + 10, uiState.products.size)
+                                    }
+                                    Text(
+                                        "Loading more products...",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
-            }
-        }
-
-        AppBottomSheet(visible = showSearchSheet, onDismiss = { showSearchSheet = false }) {
-            Column(modifier = Modifier.padding(AppSpacing.lg)) {
-                Text("Search & Sort", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(12.dp))
-                AppTextInput(
-                    value = uiState.searchQuery,
-                    onValueChange = viewModel::onSearchQueryChanged,
-                    label = "Search products"
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(ProductSortOption.values().toList()) { option ->
-                        CategoryPill(
-                            text = option.name.replace("To", " to "),
-                            selected = option == uiState.selectedSort,
-                            onClick = { viewModel.onSortSelected(option) }
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(12.dp))
             }
         }
 
@@ -280,12 +333,12 @@ private fun LoadingState() {
 private fun HeroProductCard(product: Product, onProductClick: () -> Unit) {
     Card(
         modifier = Modifier
-            .width(320.dp),
+            .width(304.dp),
         shape = RoundedCornerShape(1.5.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
-        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             ProductImage(
                 model = product.imageUrl,
                 contentDescription = product.title,
@@ -330,18 +383,18 @@ private fun HomeProductCard(
             .clip(RoundedCornerShape(AppRadius.md))
             .clickable(onClick = onClick)
     ) {
-        Column(modifier = Modifier.padding(10.dp)) {
+        Column(modifier = Modifier.padding(8.dp)) {
             ProductImage(
                 model = product.imageUrl,
                 contentDescription = product.title,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(130.dp)
+                    .height(118.dp)
                     .clip(RoundedCornerShape(AppRadius.md))
                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(6.dp))
             Text(product.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
             Text(
                 categoryLabel(product.category),
@@ -356,7 +409,7 @@ private fun HomeProductCard(
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.SemiBold
             )
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(3.dp))
             Text(
                 previewDescription(product.description, maxWords = 20),
                 color = TextSecondary,
@@ -364,7 +417,7 @@ private fun HomeProductCard(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(3.dp))
             val rating = product.rating?.rate ?: 0.0
             val filledStars = rating.toInt().coerceIn(0, 5)
             Row(

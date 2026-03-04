@@ -1,4 +1,5 @@
 import axios from "axios";
+import { startLoadingProgress } from "./loadingProgress";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://ecommerce-adroid-app.onrender.com/api";
 const AUTH_STORAGE_KEY = "cartify_admin_auth";
@@ -24,6 +25,10 @@ const getStoredToken = () => {
 };
 
 api.interceptors.request.use((config) => {
+  const shouldTrackProgress = !config?.skipProgressBar;
+  if (shouldTrackProgress) {
+    config.__stopLoadingProgress = startLoadingProgress();
+  }
   const token = getStoredToken();
   if (token) {
     config.headers = config.headers || {};
@@ -31,6 +36,17 @@ api.interceptors.request.use((config) => {
   }
   return config;
 });
+
+api.interceptors.response.use(
+  (response) => {
+    response?.config?.__stopLoadingProgress?.();
+    return response;
+  },
+  (error) => {
+    error?.config?.__stopLoadingProgress?.();
+    return Promise.reject(error);
+  }
+);
 
 export const setAuthToken = (token) => {
   if (token) {
@@ -53,14 +69,14 @@ const buildPrefetchKey = (url, params) => {
   return query ? `${url}?${query}` : url;
 };
 
-export const prefetchGet = async (url, { params, ttlMs = DEFAULT_PREFETCH_TTL_MS, force = false } = {}) => {
+export const prefetchGet = async (url, { params, ttlMs = DEFAULT_PREFETCH_TTL_MS, force = false, withProgress = false } = {}) => {
   const key = buildPrefetchKey(url, params);
   const existing = prefetchCache.get(key);
   if (!force && existing && existing.expiresAt > Date.now()) {
     return existing.data;
   }
 
-  const response = await api.get(url, { params });
+  const response = await api.get(url, { params, skipProgressBar: !withProgress });
   prefetchCache.set(key, {
     data: response.data,
     expiresAt: Date.now() + ttlMs,

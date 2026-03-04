@@ -60,6 +60,7 @@ private fun BackendProduct.toUiProduct(usedIds: MutableSet<Int>): Product {
     while (!usedIds.add(candidate)) {
         candidate += 1
     }
+    val gallery = resolvedImageUrls()
 
     return Product(
         id = candidate,
@@ -68,7 +69,8 @@ private fun BackendProduct.toUiProduct(usedIds: MutableSet<Int>): Product {
         price = price,
         description = description,
         category = category.trim().ifBlank { "general" },
-        imageUrl = resolvedImageUrl(),
+        imageUrl = gallery.firstOrNull().orEmpty(),
+        imageUrls = gallery,
         stock = resolvedStock()
     )
 }
@@ -79,28 +81,26 @@ private fun BackendProduct.resolvedStock(): Int {
         ?: 0
 }
 
-private fun BackendProduct.resolvedImageUrl(): String {
+private fun BackendProduct.resolvedImageUrls(): List<String> {
     val candidates = buildList {
         add(imageUrl.orEmpty())
         images.orEmpty().forEach { add(it) }
     }
 
-    val selected = candidates
-        .map { it.trim() }
-        .firstOrNull { it.isNotBlank() }
-        .orEmpty()
-
-    if (selected.isBlank()) return ""
-
-    val compact = if (selected.startsWith("data:", ignoreCase = true)) {
-        selected.replace("\\s".toRegex(), "")
-    } else {
-        selected
-    }
-
     val backendHost = BackendConfig.baseUrl.removeSuffix("/api/").removeSuffix("/")
-    return compact
-        .replace("http://localhost:4000", backendHost, ignoreCase = true)
-        .replace("http://127.0.0.1:4000", backendHost, ignoreCase = true)
-        .replace("https://ecommerce-adroid-app.onrender.com", backendHost, ignoreCase = true)
+    return candidates
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .map { raw ->
+            val compact = if (raw.startsWith("data:", ignoreCase = true)) {
+                raw.replace("\\s".toRegex(), "")
+            } else {
+                raw
+            }
+            compact
+                .replace("http://localhost:4000", backendHost, ignoreCase = true)
+                .replace("http://127.0.0.1:4000", backendHost, ignoreCase = true)
+                .replace("https://ecommerce-adroid-app.onrender.com", backendHost, ignoreCase = true)
+        }
+        .distinct()
 }

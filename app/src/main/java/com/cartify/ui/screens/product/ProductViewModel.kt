@@ -29,6 +29,7 @@ class ProductViewModel(
     private val productRepository: ProductRepository,
     private val cartRepository: CartRepository
 ) : ViewModel() {
+    private var lastVisibleProducts: List<Product> = emptyList()
     private val query = MutableStateFlow("")
     private val category = MutableStateFlow("All")
     private val sort = MutableStateFlow(ProductSortOption.Popularity)
@@ -52,6 +53,7 @@ class ProductViewModel(
             is ProductDataState.Loading -> {
                 ProductUiState(
                     isLoading = true,
+                    products = lastVisibleProducts,
                     searchQuery = queryText,
                     selectedCategory = selectedCategory,
                     selectedSort = selectedSort
@@ -61,6 +63,7 @@ class ProductViewModel(
                 ProductUiState(
                     isLoading = false,
                     error = repositoryState.message,
+                    products = lastVisibleProducts,
                     searchQuery = queryText,
                     selectedCategory = selectedCategory,
                     selectedSort = selectedSort
@@ -84,6 +87,7 @@ class ProductViewModel(
                         }
                     }
 
+                lastVisibleProducts = filtered
                 ProductUiState(
                     isLoading = false,
                     products = filtered,

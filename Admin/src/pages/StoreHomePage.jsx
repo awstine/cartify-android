@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { api, consumePrefetchedGet } from "../api";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { api, consumePrefetchedGet, prefetchGet } from "../api";
 import { useAuth } from "../auth";
 import { Button } from "../components/ui/Button";
 import { EmptyState, ErrorState, LoadingState } from "../components/ui/States";
 import { useToast } from "../context/ToastContext";
 
 const formatMoney = (value) => new Intl.NumberFormat("en-KE", { style: "currency", currency: "KES" }).format(Number(value || 0));
+const PRODUCTS_BATCH_SIZE = 12;
 const renderStars = (rating) => {
   const normalized = Math.max(0, Math.min(5, Number(rating || 0)));
   return Array.from({ length: 5 }).map((_, index) => {
@@ -31,6 +32,8 @@ export const StoreHomePage = () => {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [visibleCount, setVisibleCount] = useState(PRODUCTS_BATCH_SIZE);
+  const loadMoreRef = useRef(null);
   const search = (searchParams.get("search") || "").toLowerCase();
   const category = searchParams.get("category") || "all";
 
@@ -71,6 +74,29 @@ export const StoreHomePage = () => {
     [products, search, category]
   );
 
+  useEffect(() => {
+    setVisibleCount(PRODUCTS_BATCH_SIZE);
+  }, [search, category]);
+
+  useEffect(() => {
+    if (!loadMoreRef.current) return undefined;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          setVisibleCount((current) => Math.min(current + PRODUCTS_BATCH_SIZE, visibleProducts.length));
+        });
+      },
+      { rootMargin: "200px 0px" }
+    );
+
+    observer.observe(loadMoreRef.current);
+    return () => observer.disconnect();
+  }, [visibleProducts.length]);
+
+  const renderedProducts = useMemo(() => visibleProducts.slice(0, visibleCount), [visibleProducts, visibleCount]);
+  const hasMoreProducts = renderedProducts.length < visibleProducts.length;
+
   const addToCart = async (productId) => {
     if (!isAuthenticated) {
       navigate("/login", { state: { from: "/" } });
@@ -88,7 +114,16 @@ export const StoreHomePage = () => {
     }
   };
 
-  if (loading) return <LoadingState label="Loading products..." />;
+  const openProduct = async (productId) => {
+    try {
+      await prefetchGet(`/products/${productId}`, { withProgress: true });
+    } catch (_err) {
+      // Ignore and navigate anyway.
+    }
+    navigate(`/product/${productId}`);
+  };
+
+  if (loading) return <LoadingState label="Loading products..." showSpinner={false} />;
   if (error) return <ErrorState message={error} action={<Button onClick={() => window.location.reload()}>Retry</Button>} />;
 
   return (
@@ -127,8 +162,9 @@ export const StoreHomePage = () => {
       {visibleProducts.length === 0 ? (
         <EmptyState title="No products found" description="Try changing your search or category filters." />
       ) : (
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
-          {visibleProducts.map((product) => {
+        <>
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
+            {renderedProducts.map((product) => {
             const isOut = Number(product.stockQty || 0) <= 0;
             const reviewCount = Array.isArray(product.reviews) ? product.reviews.length : 0;
             const avgRating =
@@ -136,16 +172,26 @@ export const StoreHomePage = () => {
                 ? (product.reviews || []).reduce((sum, item) => sum + Number(item.rating || 0), 0) / reviewCount
                 : 0;
             return (
-              <article key={product._id} className="rounded-2xl border border-slate-200 bg-white p-3">
-                <Link to={`/product/${product._id}`}>
-                  <div className="aspect-square overflow-hidden rounded-xl bg-slate-100">
-                    {product.imageUrl ? (
-                      <img src={product.imageUrl} alt={product.title} className="h-full w-full object-cover" />
-                    ) : (
-                      <div className="flex h-full items-center justify-center text-sm text-slate-500">No image</div>
-                    )}
-                  </div>
-                </Link>
+              <article
+                key={product._id}
+                role="button"
+                tabIndex={0}
+                onClick={() => openProduct(product._id)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    openProduct(product._id);
+                  }
+                }}
+                className="cursor-pointer rounded-2xl border border-slate-200 bg-white p-3 transition hover:border-slate-300"
+              >
+                <div className="aspect-square overflow-hidden rounded-xl bg-slate-100">
+                  {product.imageUrl ? (
+                    <img src={product.imageUrl} alt={product.title} className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-sm text-slate-500">No image</div>
+                  )}
+                </div>
                 <div className="mt-3">
                   <p className="truncate font-semibold text-slate-900">{product.title}</p>
                   <p className="text-xs text-slate-500">{product.category}</p>
@@ -166,13 +212,26 @@ export const StoreHomePage = () => {
                     {isOut ? "Out of stock" : `Stock: ${Number(product.stockQty || 0)}`}
                   </p>
                 </div>
-                <Button className="mt-3 w-full" disabled={isOut} onClick={() => addToCart(product._id)}>
+                <Button
+                  className="mt-3 w-full"
+                  disabled={isOut}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    addToCart(product._id);
+                  }}
+                >
                   {isOut ? "Out of stock" : "Add to Cart"}
                 </Button>
               </article>
             );
-          })}
-        </div>
+            })}
+          </div>
+          {hasMoreProducts ? (
+            <div ref={loadMoreRef} className="py-6 text-center text-sm text-slate-500">
+              Loading more products...
+            </div>
+          ) : null}
+        </>
       )}
     </div>
   );

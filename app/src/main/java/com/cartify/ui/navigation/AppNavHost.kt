@@ -6,26 +6,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ShoppingCart
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -36,8 +25,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.navigation.NavType
@@ -72,8 +59,6 @@ import com.cartify.ui.screens.more.WishlistScreen
 import com.cartify.ui.screens.product.ProductDetailsScreen
 import com.cartify.ui.screens.product.ProductScreen
 import com.cartify.ui.screens.product.ProductViewModel
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -94,6 +79,7 @@ fun AppNavHost(
     val authViewModel: AuthViewModel = androidx.lifecycle.viewmodel.compose.viewModel(factory = AuthViewModelFactory(app))
     val session by authViewModel.sessionState.collectAsState()
     val pendingAction by authViewModel.pendingAction.collectAsState()
+    val productUiState by productViewModel.uiState.collectAsState()
     val isLoggedIn = session.isLoggedIn
     val cartItems by cartViewModel.cart.collectAsState()
     val cartItemCount = cartItems.sumOf { it.quantity }
@@ -101,7 +87,6 @@ fun AppNavHost(
     val scope = rememberCoroutineScope()
     val backendRepository = remember { BackendRepository() }
     var wishlistProductIds by remember { mutableStateOf(setOf<String>()) }
-    var prefetchingRoute by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         productViewModel.retryLoad()
@@ -138,21 +123,18 @@ fun AppNavHost(
     }
 
     fun navigateWithPrefetch(route: String) {
-        if (route == currentRoute || prefetchingRoute != null) return
-        scope.launch {
-            val token = session.token?.trim().orEmpty()
-            val requiresPrefetch = route == NavigationItem.Wishlist.route ||
-                route == NavigationItem.Cart.route ||
-                route == NavigationItem.Orders.route ||
-                route == NavigationItem.Profile.route
+        if (route == currentRoute) return
+        navController.navigate(route) { launchSingleTop = true }
 
-            if (isLoggedIn && token.isNotBlank() && requiresPrefetch) {
-                prefetchingRoute = route
+        val token = session.token?.trim().orEmpty()
+        val requiresPrefetch = route == NavigationItem.Wishlist.route ||
+            route == NavigationItem.Cart.route ||
+            route == NavigationItem.Orders.route ||
+            route == NavigationItem.Profile.route
+        if (isLoggedIn && token.isNotBlank() && requiresPrefetch) {
+            scope.launch {
                 runCatching { backendRepository.prefetchForRoute(token, route) }
             }
-
-            navController.navigate(route) { launchSingleTop = true }
-            prefetchingRoute = null
         }
     }
 
@@ -175,6 +157,9 @@ fun AppNavHost(
             currentRoute?.startsWith("$route?") == true ||
             currentRoute?.startsWith("$route/") == true
     }
+    val shouldShowBootstrap = (
+        currentRoute == null || currentRoute == NavigationItem.Products.route
+        ) && productUiState.isLoading && productUiState.products.isEmpty() && productUiState.error.isNullOrBlank()
 
     LaunchedEffect(isLoggedIn, pendingAction) {
         if (!isLoggedIn) return@LaunchedEffect
@@ -186,7 +171,6 @@ fun AppNavHost(
                 if (product != null) {
                     if (product.stock > 0) {
                         productViewModel.addToCart(product)
-                        snackbarHostState.showSnackbar("Added to cart")
                     } else {
                         snackbarHostState.showSnackbar("Out of stock")
                     }
@@ -219,103 +203,6 @@ fun AppNavHost(
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
-        topBar = {
-            if (showMainShell) {
-                TopAppBar(
-                    modifier = Modifier.height(80.dp),
-                    title = {
-                        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                            Text(
-                                text = "Cartify",
-                                style = MaterialTheme.typography.titleLarge
-                            )
-                            Text(
-                                text = "Smart shopping",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    },
-                    actions = {
-                        IconButton(onClick = {
-                            if (isLoggedIn) {
-                                navigateWithPrefetch(NavigationItem.Profile.route)
-                            } else {
-                                navController.navigate(NavigationItem.Login.route) { launchSingleTop = true }
-                            }
-                        }, modifier = Modifier
-                            .padding(end = 2.dp)
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))) {
-                            val avatarSource = session.profileImageUrl?.trim().orEmpty()
-                            if (avatarSource.isNotBlank()) {
-                                AsyncImage(
-                                    model = ImageRequest.Builder(LocalContext.current)
-                                        .data(avatarSource)
-                                        .crossfade(true)
-                                        .build(),
-                                    contentDescription = "Profile",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier
-                                        .size(30.dp)
-                                        .clip(CircleShape)
-                                )
-                            } else {
-                                val initials = (session.name ?: "User")
-                                    .trim()
-                                    .ifBlank { "User" }
-                                    .take(2)
-                                    .uppercase()
-                                Box(
-                                    modifier = Modifier
-                                        .size(30.dp)
-                                        .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = initials,
-                                        style = MaterialTheme.typography.labelLarge,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            }
-                        }
-                        IconButton(onClick = {
-                            if (currentRoute != NavigationItem.Cart.route) {
-                                navigateWithPrefetch(NavigationItem.Cart.route)
-                            }
-                        }, modifier = Modifier
-                            .padding(end = 10.dp)
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))) {
-                            if (cartItemCount > 0) {
-                                BadgedBox(badge = { Badge { Text(cartItemCount.toString()) } }) {
-                                    Icon(
-                                        Icons.Default.ShoppingCart,
-                                        contentDescription = "Cart",
-                                        tint = MaterialTheme.colorScheme.onSurface
-                                    )
-                                }
-                            } else {
-                                Icon(
-                                    Icons.Default.ShoppingCart,
-                                    contentDescription = "Cart",
-                                    tint = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                        }
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
-                        titleContentColor = MaterialTheme.colorScheme.onSurface,
-                        actionIconContentColor = MaterialTheme.colorScheme.onSurface
-                    )
-                )
-            }
-        },
         bottomBar = {
             if (showMainShell) {
                 BottomNavigationBar(
@@ -327,11 +214,32 @@ fun AppNavHost(
         }
     ) { innerPadding ->
         Box(modifier = Modifier.fillMaxSize()) {
-            NavHost(
-                navController = navController,
-                startDestination = NavigationItem.Products.route,
-                modifier = Modifier.padding(innerPadding)
-            ) {
+            if (shouldShowBootstrap) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.surface)
+                        .padding(innerPadding),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        CircularProgressIndicator()
+                        Text(
+                            "Loading products...",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            } else {
+                NavHost(
+                    navController = navController,
+                    startDestination = NavigationItem.Products.route,
+                    modifier = Modifier.padding(innerPadding)
+                ) {
             composable(NavigationItem.Login.route) {
                 LoginScreen(
                     viewModel = authViewModel,
@@ -385,7 +293,6 @@ fun AppNavHost(
                         ) {
                             if (product.stock > 0) {
                                 productViewModel.addToCart(product)
-                                scope.launch { snackbarHostState.showSnackbar("Added to cart") }
                             } else {
                                 scope.launch { snackbarHostState.showSnackbar("Out of stock") }
                             }
@@ -725,6 +632,8 @@ fun AppNavHost(
                         }
                     },
                     onBack = { navController.popBackStack() },
+                    cartItemCount = cartItemCount,
+                    onOpenCart = { navigateWithPrefetch(NavigationItem.Cart.route) },
                     onAddToCart = { product ->
                         if (product.stock <= 0) {
                             scope.launch { snackbarHostState.showSnackbar("Out of stock") }
@@ -732,11 +641,10 @@ fun AppNavHost(
                             val allowed = authViewModel.requireAuth(
                                 actionName = "ADD_TO_CART",
                                 returnRoute = "product_details/${product.id}",
-                                payload = PendingActionPayload(productId = product.id, quantity = 1)
-                            ) {
-                                productViewModel.addToCart(product)
-                                scope.launch { snackbarHostState.showSnackbar("Added to cart") }
-                            }
+                            payload = PendingActionPayload(productId = product.id, quantity = 1)
+                        ) {
+                            productViewModel.addToCart(product)
+                        }
                             if (!allowed) navController.navigate(NavigationItem.Login.route) { launchSingleTop = true }
                         }
                     },
@@ -774,19 +682,9 @@ fun AppNavHost(
                     }
                 )
             }
-
-            }
-
-            if (!prefetchingRoute.isNullOrBlank()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.background.copy(alpha = 0.35f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator()
                 }
             }
+
         }
     }
 }

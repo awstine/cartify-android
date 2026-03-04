@@ -36,7 +36,7 @@ export const MyOrdersPage = () => {
     loadOrders();
   }, []);
 
-  if (loading) return <LoadingState label="Loading orders..." />;
+  if (loading) return <LoadingState label="Loading orders..." showSpinner={false} />;
   if (error) return <ErrorState message={error} action={<Button onClick={loadOrders}>Retry</Button>} />;
   if (orders.length === 0) {
     return <EmptyState title="No orders yet" description="Place your first order from the shop." action={<Link to="/"><Button>Go to Shop</Button></Link>} />;

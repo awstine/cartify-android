@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth";
 import { Button } from "../components/ui/Button";
 import { Field, Input } from "../components/ui/Field";
@@ -136,6 +136,9 @@ export const LoginPage = () => {
         >
           {mode === "signup" ? "Already have an account? Sign in" : "No account? Create one"}
         </button>
+        <Link to="/" className="mt-2 block w-full text-center text-sm text-slate-600 hover:text-slate-900">
+          Back to Shop
+        </Link>
       </form>
     </div>
   );

@@ -65,18 +65,26 @@ export const StoreLayout = ({ children }) => {
 
   const canAccessAdmin = useMemo(() => STAFF_ROLES.includes(user?.role || ""), [user?.role]);
   const selectedCategory = searchParams.get("category") || "all";
-  const prefetchStore = (target) => {
+  const prefetchStore = (target, { withProgress = false } = {}) => {
     const tasks = {
-      shop: [prefetchGet("/products")],
-      cart: [prefetchGet("/cart")],
-      orders: [prefetchGet("/orders")],
-      profile: [prefetchGet("/users/me")],
+      shop: [prefetchGet("/products", { withProgress })],
+      cart: [prefetchGet("/cart", { withProgress })],
+      orders: [prefetchGet("/orders", { withProgress })],
+      profile: [prefetchGet("/users/me", { withProgress })],
       admin: [
-        prefetchGet("/admin/dashboard"),
-        prefetchGet("/admin/orders", { params: { limit: 5 } }),
+        prefetchGet("/admin/dashboard", { withProgress }),
+        prefetchGet("/admin/orders", { params: { limit: 5 }, withProgress }),
       ],
     };
-    Promise.all(tasks[target] || []).catch(() => {});
+    return Promise.all(tasks[target] || []).catch(() => null);
+  };
+  const navigateWithStorePrefetch = async (path, target) => {
+    try {
+      await prefetchStore(target, { withProgress: true });
+    } catch (_err) {
+      // Ignore and continue navigation.
+    }
+    navigate(path);
   };
   const applyShopFilters = ({ search, category }) => {
     const params = new URLSearchParams();
@@ -84,7 +92,8 @@ export const StoreLayout = ({ children }) => {
     const nextCategory = category !== undefined ? category : searchParams.get("category") || "all";
     if (nextSearch) params.set("search", nextSearch);
     if (nextCategory && nextCategory !== "all") params.set("category", nextCategory);
-    navigate(`/${params.toString() ? `?${params.toString()}` : ""}`);
+    const destination = `/${params.toString() ? `?${params.toString()}` : ""}`;
+    navigateWithStorePrefetch(destination, "shop");
   };
 
   return (
@@ -105,7 +114,16 @@ export const StoreLayout = ({ children }) => {
             Cartify
           </Link>
           <nav className="ml-4 hidden items-center gap-4 text-sm text-slate-700 lg:flex">
-            <Link to="/" onMouseEnter={() => prefetchStore("shop")} onFocus={() => prefetchStore("shop")} className="hover:text-slate-900">
+            <Link
+              to="/"
+              onMouseEnter={() => prefetchStore("shop")}
+              onFocus={() => prefetchStore("shop")}
+              onClick={(event) => {
+                event.preventDefault();
+                navigateWithStorePrefetch("/", "shop");
+              }}
+              className="hover:text-slate-900"
+            >
               Shop
             </Link>
             <div className="group relative">
@@ -151,10 +169,28 @@ export const StoreLayout = ({ children }) => {
             </div>
             {isAuthenticated ? (
               <>
-                <Link to="/my-orders" onMouseEnter={() => prefetchStore("orders")} onFocus={() => prefetchStore("orders")} className="hover:text-slate-900">
+                <Link
+                  to="/my-orders"
+                  onMouseEnter={() => prefetchStore("orders")}
+                  onFocus={() => prefetchStore("orders")}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    navigateWithStorePrefetch("/my-orders", "orders");
+                  }}
+                  className="hover:text-slate-900"
+                >
                   My Orders
                 </Link>
-                <Link to="/cart" onMouseEnter={() => prefetchStore("cart")} onFocus={() => prefetchStore("cart")} className="hover:text-slate-900">
+                <Link
+                  to="/cart"
+                  onMouseEnter={() => prefetchStore("cart")}
+                  onFocus={() => prefetchStore("cart")}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    navigateWithStorePrefetch("/cart", "cart");
+                  }}
+                  className="hover:text-slate-900"
+                >
                   Cart ({cartCount})
                 </Link>
               </>
@@ -176,13 +212,19 @@ export const StoreLayout = ({ children }) => {
           ) : null}
           <div className="ml-auto flex items-center gap-2">
             {canAccessAdmin ? (
-              <Button variant="secondary" onMouseEnter={() => prefetchStore("admin")} onFocus={() => prefetchStore("admin")} onClick={() => navigate("/admin")} className="hidden sm:inline-flex">
+              <Button
+                variant="secondary"
+                onMouseEnter={() => prefetchStore("admin")}
+                onFocus={() => prefetchStore("admin")}
+                onClick={() => navigateWithStorePrefetch("/admin", "admin")}
+                className="hidden sm:inline-flex"
+              >
                 Admin
               </Button>
             ) : null}
             <button
               type="button"
-              onClick={() => navigate("/cart")}
+              onClick={() => navigateWithStorePrefetch("/cart", "cart")}
               onMouseEnter={() => prefetchStore("cart")}
               onFocus={() => prefetchStore("cart")}
               className="relative rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50"
@@ -218,14 +260,44 @@ export const StoreLayout = ({ children }) => {
                 {isAuthenticated ? (
                   <>
                     <p className="truncate px-2 py-1 text-sm font-medium text-slate-800">{user?.email}</p>
-                    <Link to="/my-orders" onMouseEnter={() => prefetchStore("orders")} onFocus={() => prefetchStore("orders")} onClick={() => setMenuOpen(false)} className="block rounded-lg px-2 py-1.5 text-sm hover:bg-slate-100">
+                    <Link
+                      to="/my-orders"
+                      onMouseEnter={() => prefetchStore("orders")}
+                      onFocus={() => prefetchStore("orders")}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        setMenuOpen(false);
+                        navigateWithStorePrefetch("/my-orders", "orders");
+                      }}
+                      className="block rounded-lg px-2 py-1.5 text-sm hover:bg-slate-100"
+                    >
                       My Orders
                     </Link>
-                    <Link to="/cart" onMouseEnter={() => prefetchStore("cart")} onFocus={() => prefetchStore("cart")} onClick={() => setMenuOpen(false)} className="block rounded-lg px-2 py-1.5 text-sm hover:bg-slate-100">
+                    <Link
+                      to="/cart"
+                      onMouseEnter={() => prefetchStore("cart")}
+                      onFocus={() => prefetchStore("cart")}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        setMenuOpen(false);
+                        navigateWithStorePrefetch("/cart", "cart");
+                      }}
+                      className="block rounded-lg px-2 py-1.5 text-sm hover:bg-slate-100"
+                    >
                       Cart ({cartCount})
                     </Link>
                     {canAccessAdmin ? (
-                      <Link to="/admin" onMouseEnter={() => prefetchStore("admin")} onFocus={() => prefetchStore("admin")} onClick={() => setMenuOpen(false)} className="block rounded-lg px-2 py-1.5 text-sm hover:bg-slate-100">
+                      <Link
+                        to="/admin"
+                        onMouseEnter={() => prefetchStore("admin")}
+                        onFocus={() => prefetchStore("admin")}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          setMenuOpen(false);
+                          navigateWithStorePrefetch("/admin", "admin");
+                        }}
+                        className="block rounded-lg px-2 py-1.5 text-sm hover:bg-slate-100"
+                      >
                         Admin Dashboard
                       </Link>
                     ) : null}
@@ -245,7 +317,7 @@ export const StoreLayout = ({ children }) => {
                     type="button"
                     onClick={() => {
                       setMenuOpen(false);
-                      navigate("/login");
+                      navigateWithStorePrefetch("/login", "profile");
                     }}
                     className="block w-full rounded-lg px-2 py-1.5 text-left text-sm hover:bg-slate-100"
                   >
@@ -258,16 +330,96 @@ export const StoreLayout = ({ children }) => {
         </div>
       </header>
       <main className="mx-auto w-full max-w-7xl px-4 py-6">{children}</main>
+      <footer className="mt-8 border-t border-slate-200 bg-white">
+        <div className="mx-auto flex w-full max-w-7xl flex-col gap-3 px-4 py-6 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
+          <p className="font-medium text-slate-700">Cartify</p>
+          <div className="flex flex-wrap items-center gap-4">
+            <Link
+              to="/"
+              className="hover:text-slate-900"
+              onClick={(event) => {
+                event.preventDefault();
+                navigateWithStorePrefetch("/", "shop");
+              }}
+            >
+              Shop
+            </Link>
+            <Link
+              to="/cart"
+              className="hover:text-slate-900"
+              onClick={(event) => {
+                event.preventDefault();
+                navigateWithStorePrefetch("/cart", "cart");
+              }}
+            >
+              Cart
+            </Link>
+            <Link
+              to="/my-orders"
+              className="hover:text-slate-900"
+              onClick={(event) => {
+                event.preventDefault();
+                navigateWithStorePrefetch("/my-orders", "orders");
+              }}
+            >
+              My Orders
+            </Link>
+            {canAccessAdmin ? (
+              <Link
+                to="/admin"
+                className="hover:text-slate-900"
+                onClick={(event) => {
+                  event.preventDefault();
+                  navigateWithStorePrefetch("/admin", "admin");
+                }}
+              >
+                Admin
+              </Link>
+            ) : null}
+          </div>
+          <p className="text-xs text-slate-500">© {new Date().getFullYear()} Cartify. All rights reserved.</p>
+        </div>
+      </footer>
       <Drawer isOpen={mobileNavOpen} onClose={() => setMobileNavOpen(false)} title="Menu">
         <div className="space-y-3">
-          <Link to="/" onMouseEnter={() => prefetchStore("shop")} onFocus={() => prefetchStore("shop")} onClick={() => setMobileNavOpen(false)} className="block rounded-lg px-2 py-1.5 text-sm hover:bg-slate-100">
+          <Link
+            to="/"
+            onMouseEnter={() => prefetchStore("shop")}
+            onFocus={() => prefetchStore("shop")}
+            onClick={(event) => {
+              event.preventDefault();
+              setMobileNavOpen(false);
+              navigateWithStorePrefetch("/", "shop");
+            }}
+            className="block rounded-lg px-2 py-1.5 text-sm hover:bg-slate-100"
+          >
             Shop
           </Link>
-          <Link to="/cart" onMouseEnter={() => prefetchStore("cart")} onFocus={() => prefetchStore("cart")} onClick={() => setMobileNavOpen(false)} className="block rounded-lg px-2 py-1.5 text-sm hover:bg-slate-100">
+          <Link
+            to="/cart"
+            onMouseEnter={() => prefetchStore("cart")}
+            onFocus={() => prefetchStore("cart")}
+            onClick={(event) => {
+              event.preventDefault();
+              setMobileNavOpen(false);
+              navigateWithStorePrefetch("/cart", "cart");
+            }}
+            className="block rounded-lg px-2 py-1.5 text-sm hover:bg-slate-100"
+          >
             Cart ({cartCount})
           </Link>
           {isAuthenticated ? (
-            <Link to="/my-orders" onMouseEnter={() => prefetchStore("orders")} onFocus={() => prefetchStore("orders")} onClick={() => setMobileNavOpen(false)} className="block rounded-lg px-2 py-1.5 text-sm hover:bg-slate-100">
+            <Link
+              to="/my-orders"
+              onMouseEnter={() => prefetchStore("orders")}
+              onFocus={() => prefetchStore("orders")}
+              onClick={(event) => {
+                event.preventDefault();
+                setMobileNavOpen(false);
+                navigateWithStorePrefetch("/my-orders", "orders");
+              }}
+              className="block rounded-lg px-2 py-1.5 text-sm hover:bg-slate-100"
+            >
               My Orders
             </Link>
           ) : null}
