@@ -3,6 +3,7 @@ import { api, setAuthToken } from "./api";
 
 const AUTH_STORAGE_KEY = "cartify_admin_auth";
 const AuthContext = createContext(null);
+const STAFF_ROLES = ["support", "manager", "admin", "super_admin"];
 
 export const AuthProvider = ({ children }) => {
   const [authState, setAuthState] = useState(() => {
@@ -28,15 +29,19 @@ export const AuthProvider = ({ children }) => {
     const response = await api.post("/auth/login", { email, password });
     const payload = response.data;
     setAuthToken(payload.token);
-    try {
-      await api.get("/admin/dashboard");
-    } catch (_err) {
-      setAuthToken(null);
-      throw new Error("This account is not an admin.");
-    }
     setAuthState({
       token: payload.token,
-      user: { ...payload.user, role: payload?.user?.role || "admin" },
+      user: { ...payload.user, role: payload?.user?.role || "customer" },
+    });
+  };
+
+  const signup = async ({ name, email, phoneNumber, password }) => {
+    const response = await api.post("/auth/signup", { name, email, phoneNumber, password });
+    const payload = response.data;
+    setAuthToken(payload.token);
+    setAuthState({
+      token: payload.token,
+      user: { ...payload.user, role: payload?.user?.role || "customer" },
     });
   };
 
@@ -56,7 +61,9 @@ export const AuthProvider = ({ children }) => {
       token: authState.token,
       user: authState.user,
       isAuthenticated: Boolean(authState.token && authState.user),
+      isStaff: STAFF_ROLES.includes(authState?.user?.role),
       login,
+      signup,
       logout,
       updateUser,
     }),

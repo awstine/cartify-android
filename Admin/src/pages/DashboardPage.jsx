@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { api } from "../api";
+import { api, consumePrefetchedGet } from "../api";
 import { Button } from "../components/ui/Button";
 import { PageHeader } from "../components/ui/PageHeader";
 import { EmptyState, ErrorState, LoadingState } from "../components/ui/States";
@@ -16,7 +16,11 @@ export const DashboardPage = () => {
   const [error, setError] = useState("");
 
   const loadDashboard = async () => {
-    setLoading(true);
+    const prefetchedDashboard = consumePrefetchedGet("/admin/dashboard");
+    const prefetchedRecentOrders = consumePrefetchedGet("/admin/orders", { params: { limit: 5 } });
+    if (prefetchedDashboard) setMetrics(prefetchedDashboard);
+    if (prefetchedRecentOrders) setOrders(prefetchedRecentOrders.items || []);
+    setLoading(!(prefetchedDashboard && prefetchedRecentOrders));
     setError("");
     try {
       const [dashboardRes, orderRes] = await Promise.all([

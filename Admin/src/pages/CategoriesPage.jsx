@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api } from "../api";
+import { api, consumePrefetchedGet } from "../api";
 import { CategoryModal } from "../components/CategoryModal";
 import { Button } from "../components/ui/Button";
 import { Drawer } from "../components/ui/Drawer";
@@ -26,7 +26,13 @@ export const CategoriesPage = () => {
   const [submitting, setSubmitting] = useState(false);
 
   const loadCategories = async () => {
-    setLoading(true);
+    const prefetched = consumePrefetchedGet("/admin/categories");
+    if (prefetched) {
+      setCategories(prefetched || []);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     setError("");
     try {
       const response = await api.get("/admin/categories");
@@ -145,7 +151,7 @@ export const CategoriesPage = () => {
               <Td>
                 <button
                   type="button"
-                  onClick={() => navigate(`/products?category=${encodeURIComponent(category.slug)}`)}
+                  onClick={() => navigate(`/admin/products?category=${encodeURIComponent(category.slug)}`)}
                   className="text-left"
                 >
                   <p className="font-medium text-primary hover:underline">{category.name}</p>

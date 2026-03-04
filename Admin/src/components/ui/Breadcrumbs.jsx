@@ -15,18 +15,19 @@ const labels = {
 export const Breadcrumbs = () => {
   const { pathname } = useLocation();
   const parts = pathname.split("/").filter(Boolean);
+  const adminParts = parts[0] === "admin" ? parts.slice(1) : parts;
 
   return (
     <nav aria-label="Breadcrumb" className="mb-4 text-sm text-slate-500">
       <ol className="flex flex-wrap items-center gap-2">
         <li>
-          <Link to="/" className="hover:text-slate-900 dark:hover:text-slate-100">
+          <Link to="/admin" className="hover:text-slate-900 dark:hover:text-slate-100">
             Dashboard
           </Link>
         </li>
-        {parts.map((part, index) => {
-          const to = `/${parts.slice(0, index + 1).join("/")}`;
-          const isLast = index === parts.length - 1;
+        {adminParts.map((part, index) => {
+          const to = `/admin/${adminParts.slice(0, index + 1).join("/")}`;
+          const isLast = index === adminParts.length - 1;
           return (
             <li key={to} className="flex items-center gap-2">
               <span>/</span>

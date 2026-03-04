@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { api } from "../api";
+import { api, consumePrefetchedGet } from "../api";
 import { Button } from "../components/ui/Button";
 import { Drawer } from "../components/ui/Drawer";
 import { Input, Select } from "../components/ui/Field";
@@ -42,16 +42,22 @@ export const OrdersPage = () => {
   const [savingShipping, setSavingShipping] = useState(false);
 
   const loadOrders = async () => {
-    setLoading(true);
+    const params = {
+      page,
+      limit: LIMIT,
+      status: statusFilter || undefined,
+    };
+    const prefetched = consumePrefetchedGet("/admin/orders", { params });
+    if (prefetched) {
+      setOrders(prefetched.items || []);
+      setTotal(prefetched.total || 0);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     setError("");
     try {
-      const response = await api.get("/admin/orders", {
-        params: {
-          page,
-          limit: LIMIT,
-          status: statusFilter || undefined,
-        },
-      });
+      const response = await api.get("/admin/orders", { params });
       setOrders(response.data.items || []);
       setTotal(response.data.total || 0);
     } catch (err) {

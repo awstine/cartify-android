@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { api } from "../api";
+import { api, prefetchGet } from "../api";
 import { useAuth } from "../auth";
 import { useToast } from "../context/ToastContext";
 import { Breadcrumbs } from "./ui/Breadcrumbs";
@@ -9,14 +9,14 @@ import { Drawer } from "./ui/Drawer";
 import { Input } from "./ui/Field";
 
 const navItems = [
-  { to: "/", label: "Dashboard", icon: "dashboard" },
-  { to: "/products", label: "Products", icon: "products" },
-  { to: "/categories", label: "Categories", icon: "categories" },
-  { to: "/orders", label: "Orders", icon: "orders" },
-  { to: "/users", label: "Customers", icon: "customers" },
-  { to: "/sales", label: "Sales", icon: "sales" },
-  { to: "/coupons", label: "Coupons", icon: "categories" },
-  { to: "/audit-logs", label: "Audit Logs", icon: "orders" },
+  { to: "/admin", label: "Dashboard", icon: "dashboard" },
+  { to: "/admin/products", label: "Products", icon: "products" },
+  { to: "/admin/categories", label: "Categories", icon: "categories" },
+  { to: "/admin/orders", label: "Orders", icon: "orders" },
+  { to: "/admin/users", label: "Customers", icon: "customers" },
+  { to: "/admin/sales", label: "Sales", icon: "sales" },
+  { to: "/admin/coupons", label: "Coupons", icon: "categories" },
+  { to: "/admin/audit-logs", label: "Audit Logs", icon: "orders" },
 ];
 
 const NavIcon = ({ type }) => {
@@ -83,6 +83,7 @@ export const Layout = ({ children }) => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [query, setQuery] = useState("");
   const firstPollRef = useRef(true);
+  const prefetchedRoutesRef = useRef(new Set());
 
   const seenKey = `cartify_admin_last_seen_order_${user?.id || user?.email || "default"}`;
   const formatMoney = (value) =>
@@ -133,6 +134,29 @@ export const Layout = ({ children }) => {
     };
   }, [seenKey, showToast]);
 
+  const prefetchAdminRoute = (route) => {
+    if (!route || prefetchedRoutesRef.current.has(route)) return;
+    prefetchedRoutesRef.current.add(route);
+    const tasks = {
+      "/admin": [
+        prefetchGet("/admin/dashboard"),
+        prefetchGet("/admin/orders", { params: { limit: 5 } }),
+      ],
+      "/admin/products": [
+        prefetchGet("/admin/products", { params: { page: 1, limit: 12 } }),
+        prefetchGet("/admin/categories"),
+      ],
+      "/admin/categories": [prefetchGet("/admin/categories")],
+      "/admin/orders": [prefetchGet("/admin/orders", { params: { page: 1, limit: 12 } })],
+      "/admin/users": [prefetchGet("/admin/users", { params: { page: 1, limit: 12 } })],
+      "/admin/sales": [prefetchGet("/admin/sales")],
+      "/admin/coupons": [prefetchGet("/admin/coupons")],
+      "/admin/audit-logs": [prefetchGet("/admin/audit-logs", { params: { page: 1, limit: 20 } })],
+      "/admin/profile": [prefetchGet("/admin/profile")],
+    };
+    Promise.all(tasks[route] || []).catch(() => {});
+  };
+
   const navLinks = useMemo(
     () => (
       <nav className="mt-6 flex flex-col gap-1">
@@ -140,7 +164,7 @@ export const Layout = ({ children }) => {
           <NavLink
             key={item.to}
             to={item.to}
-            end={item.to === "/"}
+            end={item.to === "/admin"}
             className={({ isActive }) =>
               `rounded-xl px-3 py-2.5 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 ${
                 isActive
@@ -149,6 +173,8 @@ export const Layout = ({ children }) => {
               }`
             }
             onClick={() => setMobileOpen(false)}
+            onMouseEnter={() => prefetchAdminRoute(item.to)}
+            onFocus={() => prefetchAdminRoute(item.to)}
           >
             <span className="inline-flex items-center gap-2">
               <NavIcon type={item.icon} />
@@ -179,7 +205,7 @@ export const Layout = ({ children }) => {
             <NavLink
               key={`compact-${item.to}`}
               to={item.to}
-              end={item.to === "/"}
+              end={item.to === "/admin"}
               className={({ isActive }) =>
                 `flex h-9 w-9 items-center justify-center rounded-xl text-xs transition ${
                   isActive
@@ -188,6 +214,8 @@ export const Layout = ({ children }) => {
                 }`
               }
               title={item.label}
+              onMouseEnter={() => prefetchAdminRoute(item.to)}
+              onFocus={() => prefetchAdminRoute(item.to)}
             >
               <NavIcon type={item.icon} />
             </NavLink>
@@ -217,7 +245,13 @@ export const Layout = ({ children }) => {
               />
             </div>
             <div className="ml-auto flex items-center gap-2">
-              <Button variant="ghost" aria-label="Users" onClick={() => navigate("/users")}>
+              <Button
+                variant="ghost"
+                aria-label="Users"
+                onMouseEnter={() => prefetchAdminRoute("/admin/users")}
+                onFocus={() => prefetchAdminRoute("/admin/users")}
+                onClick={() => navigate("/admin/users")}
+              >
                 <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
                   <circle cx="9" cy="8" r="3" />
                   <path d="M3 19c0-3.3 2.7-6 6-6s6 2.7 6 6" />
@@ -264,7 +298,7 @@ export const Layout = ({ children }) => {
                             type="button"
                             onClick={() => {
                               setNotificationsOpen(false);
-                              navigate("/orders");
+                              navigate("/admin/orders");
                             }}
                             className="block w-full rounded-lg px-2 py-2 text-left hover:bg-slate-100 dark:hover:bg-slate-800"
                           >
@@ -293,9 +327,11 @@ export const Layout = ({ children }) => {
                     <Button
                       variant="secondary"
                       className="mt-2 w-full"
+                      onMouseEnter={() => prefetchAdminRoute("/admin/profile")}
+                      onFocus={() => prefetchAdminRoute("/admin/profile")}
                       onClick={() => {
                         setProfileOpen(false);
-                        navigate("/profile");
+                        navigate("/admin/profile");
                       }}
                     >
                       Profile

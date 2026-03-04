@@ -13,6 +13,7 @@ const mapUserProfile = (user) => ({
   id: user.id,
   name: user.name,
   email: user.email,
+  phoneNumber: user.phoneNumber || "",
   profileImageUrl: user.profileImageUrl || "",
   preferences: {
     notificationsEnabled: user.preferences?.notificationsEnabled ?? true,
@@ -33,6 +34,7 @@ router.patch(
   [
     body("name").optional().isString().trim().isLength({ min: 2, max: 80 }),
     body("email").optional().isEmail().normalizeEmail(),
+    body("phoneNumber").optional().isString().trim().isLength({ min: 7, max: 30 }),
     body("profileImageUrl").optional().isString(),
     body("preferences").optional().isObject(),
     body("preferences.notificationsEnabled").optional().isBoolean(),
@@ -47,8 +49,9 @@ router.patch(
     const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    const { name, email, profileImageUrl, preferences } = req.body;
+    const { name, email, phoneNumber, profileImageUrl, preferences } = req.body;
     if (typeof name === "string") user.name = name.trim();
+    if (typeof phoneNumber === "string") user.phoneNumber = phoneNumber.trim();
     if (typeof profileImageUrl === "string") user.profileImageUrl = profileImageUrl.trim();
 
     if (typeof email === "string") {

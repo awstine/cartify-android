@@ -1,9 +1,13 @@
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../auth";
 
-export const ProtectedRoute = ({ children }) => {
+const STAFF_ROLES = ["support", "manager", "admin", "super_admin"];
+
+export const StaffRoute = ({ children }) => {
   const location = useLocation();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
+
   if (!isAuthenticated) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  if (!STAFF_ROLES.includes(user?.role || "")) return <Navigate to="/" replace />;
   return children;
 };

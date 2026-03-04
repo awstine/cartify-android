@@ -11,7 +11,7 @@ import { EmptyState, ErrorState, LoadingState } from "../components/ui/States";
 import { Badge } from "../components/ui/Surface";
 import { Table, Td } from "../components/ui/Table";
 import { useToast } from "../context/ToastContext";
-import { api } from "../api";
+import { api, consumePrefetchedGet } from "../api";
 
 const LIMIT = 12;
 
@@ -34,18 +34,24 @@ export const ProductsPage = () => {
   const [editingProduct, setEditingProduct] = useState(null);
 
   const fetchProducts = async () => {
-    setLoading(true);
+    const params = {
+      page,
+      limit: LIMIT,
+      search: search || undefined,
+      category: category || undefined,
+      stock: stockFilter !== "all" ? stockFilter : undefined,
+    };
+    const prefetched = consumePrefetchedGet("/admin/products", { params });
+    if (prefetched) {
+      setProducts(prefetched.items || []);
+      setTotal(prefetched.total || 0);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     setError("");
     try {
-      const response = await api.get("/admin/products", {
-        params: {
-          page,
-          limit: LIMIT,
-          search: search || undefined,
-          category: category || undefined,
-          stock: stockFilter !== "all" ? stockFilter : undefined,
-        },
-      });
+      const response = await api.get("/admin/products", { params });
       setProducts(response.data.items || []);
       setTotal(response.data.total || 0);
     } catch (err) {
@@ -59,8 +65,9 @@ export const ProductsPage = () => {
 
   const fetchCategories = async () => {
     try {
-      const response = await api.get("/admin/categories");
-      const mapped = (response.data || []).map((category) => ({
+      const prefetched = consumePrefetchedGet("/admin/categories");
+      const data = prefetched || (await api.get("/admin/categories")).data || [];
+      const mapped = (data || []).map((category) => ({
         value: category.slug,
         label: category.name,
       }));

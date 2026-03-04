@@ -31,6 +31,7 @@ router.post(
     body("name").isString().trim().isLength({ min: 2 }),
     body("email").isEmail().normalizeEmail(),
     body("password").isLength({ min: 6 }),
+    body("phoneNumber").optional().isString().trim().isLength({ min: 7, max: 30 }),
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -45,8 +46,13 @@ router.post(
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
-    const role = resolveRoleForEmail(email);
-    const user = await User.create({ name, email, passwordHash, role });
+    const user = await User.create({
+      name,
+      email,
+      passwordHash,
+      role: "customer",
+      phoneNumber: String(req.body.phoneNumber || "").trim(),
+    });
     await Cart.create({ userId: user._id, items: [] });
     await Wishlist.create({ userId: user._id, items: [] });
 
@@ -58,6 +64,7 @@ router.post(
         name: user.name,
         email: user.email,
         role: user.role,
+        phoneNumber: user.phoneNumber || "",
         profileImageUrl: user.profileImageUrl || "",
       },
     });
@@ -94,6 +101,7 @@ router.post(
         name: user.name,
         email: user.email,
         role: user.role,
+        phoneNumber: user.phoneNumber || "",
         profileImageUrl: user.profileImageUrl || "",
       },
     });

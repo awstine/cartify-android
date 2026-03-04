@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "../api";
+import { api, consumePrefetchedGet } from "../api";
 import { useAuth } from "../auth";
 import { Button } from "../components/ui/Button";
 import { Field, Input, Select } from "../components/ui/Field";
@@ -35,18 +35,24 @@ export const UsersPage = () => {
   const canManageUsers = ["admin", "super_admin"].includes(user?.role || "");
 
   const loadUsers = async () => {
-    setLoading(true);
+    const params = {
+      page,
+      limit: LIMIT,
+      search: search || undefined,
+      scope: scope !== "all" ? scope : undefined,
+      role: roleFilter !== "all" ? roleFilter : undefined,
+    };
+    const prefetched = consumePrefetchedGet("/admin/users", { params });
+    if (prefetched) {
+      setUsers(prefetched.items || []);
+      setTotal(prefetched.total || 0);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     setError("");
     try {
-      const response = await api.get("/admin/users", {
-        params: {
-          page,
-          limit: LIMIT,
-          search: search || undefined,
-          scope: scope !== "all" ? scope : undefined,
-          role: roleFilter !== "all" ? roleFilter : undefined,
-        },
-      });
+      const response = await api.get("/admin/users", { params });
       setUsers(response.data.items || []);
       setTotal(response.data.total || 0);
     } catch (err) {

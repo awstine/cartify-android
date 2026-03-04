@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "../api";
+import { api, consumePrefetchedGet } from "../api";
 import { Button } from "../components/ui/Button";
 import { Input, Select } from "../components/ui/Field";
 import { PageHeader } from "../components/ui/PageHeader";
@@ -25,7 +25,13 @@ export const CouponsPage = () => {
   const [form, setForm] = useState(emptyCoupon);
 
   const loadCoupons = async () => {
-    setLoading(true);
+    const prefetched = consumePrefetchedGet("/admin/coupons");
+    if (prefetched) {
+      setCoupons(prefetched || []);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     setError("");
     try {
       const response = await api.get("/admin/coupons");

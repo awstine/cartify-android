@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "../api";
+import { api, consumePrefetchedGet } from "../api";
 import { Button } from "../components/ui/Button";
 import { Input } from "../components/ui/Field";
 import { PageHeader } from "../components/ui/PageHeader";
@@ -18,12 +18,18 @@ export const AuditLogsPage = () => {
   const [error, setError] = useState("");
 
   const loadLogs = async () => {
-    setLoading(true);
+    const params = { page, limit: LIMIT, action: actionFilter || undefined };
+    const prefetched = consumePrefetchedGet("/admin/audit-logs", { params });
+    if (prefetched) {
+      setLogs(prefetched.items || []);
+      setTotal(prefetched.total || 0);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     setError("");
     try {
-      const response = await api.get("/admin/audit-logs", {
-        params: { page, limit: LIMIT, action: actionFilter || undefined },
-      });
+      const response = await api.get("/admin/audit-logs", { params });
       setLogs(response.data.items || []);
       setTotal(response.data.total || 0);
     } catch (err) {

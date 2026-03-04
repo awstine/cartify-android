@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "../api";
+import { api, consumePrefetchedGet } from "../api";
 import { Button } from "../components/ui/Button";
 import { Input } from "../components/ui/Field";
 import { PageHeader } from "../components/ui/PageHeader";
@@ -17,21 +17,41 @@ export const SalesPage = () => {
   const [to, setTo] = useState("");
 
   const loadReport = async () => {
-    setLoading(true);
+    const params = {
+      from: from || undefined,
+      to: to || undefined,
+    };
+    const prefetched = consumePrefetchedGet("/admin/sales", { params });
+    if (prefetched) {
+      setReport(prefetched);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     setError("");
     try {
-      const response = await api.get("/admin/sales", {
-        params: {
-          from: from || undefined,
-          to: to || undefined,
-        },
-      });
+      const response = await api.get("/admin/sales", { params });
       setReport(response.data);
     } catch (err) {
       setError(err?.response?.data?.message || "Failed to load sales report");
     } finally {
       setLoading(false);
     }
+  };
+
+  const downloadReport = async (type) => {
+    const response = await api.get(`/admin/sales/export.${type}`, {
+      params: { from: from || undefined, to: to || undefined },
+      responseType: "blob",
+    });
+    const blobUrl = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement("a");
+    link.href = blobUrl;
+    link.download = `sales-report.${type}`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(blobUrl);
   };
 
   useEffect(() => {
@@ -117,17 +137,3 @@ export const SalesPage = () => {
     </div>
   );
 };
-  const downloadReport = async (type) => {
-    const response = await api.get(`/admin/sales/export.${type}`, {
-      params: { from: from || undefined, to: to || undefined },
-      responseType: "blob",
-    });
-    const blobUrl = window.URL.createObjectURL(new Blob([response.data]));
-    const link = document.createElement("a");
-    link.href = blobUrl;
-    link.download = `sales-report.${type}`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.URL.revokeObjectURL(blobUrl);
-  };
