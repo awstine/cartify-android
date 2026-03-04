@@ -11,7 +11,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.SharingStarted
 
 enum class ProductSortOption { Popularity, Newest, PriceLowToHigh, PriceHighToLow }
@@ -32,7 +31,6 @@ class ProductViewModel(
     private val query = MutableStateFlow("")
     private val category = MutableStateFlow("All")
     private val sort = MutableStateFlow(ProductSortOption.Popularity)
-    private val likedProducts = MutableStateFlow<Set<Int>>(emptySet())
     val cartItemCount: StateFlow<Int> = cartRepository.cart
         .map { items -> items.sumOf { it.quantity } }
         .stateIn(
@@ -99,7 +97,11 @@ class ProductViewModel(
 
     fun allCategories(): List<String> {
         val base = when (val state = productRepository.getProductsState().value) {
-            is ProductDataState.Success -> state.products.map { it.category }.distinct().sorted()
+            is ProductDataState.Success -> state.products
+                .map { it.category.trim() }
+                .filter { it.isNotBlank() }
+                .distinctBy { it.lowercase() }
+                .sortedBy { it.lowercase() }
             else -> emptyList()
         }
         return listOf("All") + base
@@ -134,6 +136,15 @@ class ProductViewModel(
         }
     }
 
+    fun productByBackendId(backendId: String): Product? {
+        val state = productRepository.getProductsState().value
+        return if (state is ProductDataState.Success) {
+            state.products.find { it.backendId == backendId }
+        } else {
+            null
+        }
+    }
+
     fun relatedProducts(product: Product, limit: Int = 10): List<Product> {
         val state = productRepository.getProductsState().value
         if (state !is ProductDataState.Success) return emptyList()
@@ -150,14 +161,6 @@ class ProductViewModel(
             .take(limit - sameCategory.size)
             .toList()
         return sameCategory + additional
-    }
-
-    fun isLiked(productId: Int): Boolean = likedProducts.value.contains(productId)
-
-    fun toggleLike(productId: Int) {
-        likedProducts.update { current ->
-            if (current.contains(productId)) current - productId else current + productId
-        }
     }
 
     private fun pseudoPopularity(id: Int): Int = (id * 37) % 100

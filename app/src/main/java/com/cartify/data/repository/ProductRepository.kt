@@ -1,7 +1,9 @@
 package com.cartify.data.repository
 
 import com.cartify.data.model.Product
-import com.cartify.data.remote.RetrofitInstance
+import com.cartify.data.remote.backend.BackendProduct
+import com.cartify.data.remote.backend.BackendConfig
+import com.cartify.data.repository.BackendRepository
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -19,7 +21,7 @@ sealed class ProductDataState {
 class ProductRepository(
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
-    private val api = RetrofitInstance.api
+    private val backendRepository = BackendRepository()
 
     private val _productsState = MutableStateFlow<ProductDataState>(ProductDataState.Loading)
 
@@ -32,9 +34,9 @@ class ProductRepository(
     fun refreshProducts() {
         CoroutineScope(dispatcher).launch {
             _productsState.value = ProductDataState.Loading
-            runCatching { api.getProducts() }
+            runCatching { backendRepository.getProducts() }
                 .onSuccess { products ->
-                    _productsState.value = ProductDataState.Success(products)
+                    _productsState.value = ProductDataState.Success(products.toUiProducts())
                 }
                 .onFailure { throwable ->
                     _productsState.value = ProductDataState.Error(
@@ -43,4 +45,54 @@ class ProductRepository(
                 }
         }
     }
+}
+
+private fun List<BackendProduct>.toUiProducts(): List<Product> {
+    val usedIds = mutableSetOf<Int>()
+    return map { backendProduct ->
+        backendProduct.toUiProduct(usedIds)
+    }
+}
+
+private fun BackendProduct.toUiProduct(usedIds: MutableSet<Int>): Product {
+    val baseId = id.hashCode()
+    var candidate = if (baseId == Int.MIN_VALUE) 0 else kotlin.math.abs(baseId)
+    while (!usedIds.add(candidate)) {
+        candidate += 1
+    }
+
+    return Product(
+        id = candidate,
+        backendId = id,
+        title = title,
+        price = price,
+        description = description,
+        category = category.trim().ifBlank { "general" },
+        imageUrl = resolvedImageUrl()
+    )
+}
+
+private fun BackendProduct.resolvedImageUrl(): String {
+    val candidates = buildList {
+        add(imageUrl.orEmpty())
+        images.orEmpty().forEach { add(it) }
+    }
+
+    val selected = candidates
+        .map { it.trim() }
+        .firstOrNull { it.isNotBlank() }
+        .orEmpty()
+
+    if (selected.isBlank()) return ""
+
+    val compact = if (selected.startsWith("data:", ignoreCase = true)) {
+        selected.replace("\\s".toRegex(), "")
+    } else {
+        selected
+    }
+
+    val backendHost = BackendConfig.baseUrl.removeSuffix("/api/").removeSuffix("/")
+    return compact
+        .replace("http://localhost:4000", backendHost, ignoreCase = true)
+        .replace("http://127.0.0.1:4000", backendHost, ignoreCase = true)
 }

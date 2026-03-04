@@ -29,16 +29,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import com.cartify.data.model.Product
 import com.cartify.ui.components.AppEmptyState
 import com.cartify.ui.components.AppPrimaryButton
+import com.cartify.ui.components.ProductImage
 import com.cartify.ui.components.QuantityStepper
 import com.cartify.ui.components.SoftCard
 import com.cartify.ui.navigation.NavigationItem
@@ -98,8 +96,8 @@ fun CartScreen(
                             modifier = Modifier.padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            AsyncImage(
-                                model = ImageRequest.Builder(LocalContext.current).data(item.product.imageUrl).crossfade(true).build(),
+                            ProductImage(
+                                model = item.product.imageUrl,
                                 contentDescription = item.product.title,
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier
@@ -114,7 +112,11 @@ fun CartScreen(
                             ) {
                                 Text(item.product.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text("Color: Lavender  -  Size: M", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
-                                Text("$${item.product.price}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                Text(
+                                    "KSh ${"%.2f".format(item.product.price)}",
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold
+                                )
                                 Spacer(modifier = Modifier.height(8.dp))
                                 QuantityStepper(
                                     quantity = item.quantity,

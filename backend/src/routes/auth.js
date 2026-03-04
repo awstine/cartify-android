@@ -9,8 +9,13 @@ import { Wishlist } from "../models/Wishlist.js";
 
 const router = Router();
 
+const resolveRoleForEmail = (email, currentRole = "customer") => {
+  if (currentRole === "admin") return "admin";
+  return env.adminEmails.includes(String(email || "").trim().toLowerCase()) ? "admin" : "customer";
+};
+
 const issueToken = (user) =>
-  jwt.sign({ email: user.email }, env.jwtSecret, {
+  jwt.sign({ email: user.email, role: user.role }, env.jwtSecret, {
     subject: user.id,
     expiresIn: env.jwtExpiresIn,
   });
@@ -35,7 +40,8 @@ router.post(
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
-    const user = await User.create({ name, email, passwordHash });
+    const role = resolveRoleForEmail(email);
+    const user = await User.create({ name, email, passwordHash, role });
     await Cart.create({ userId: user._id, items: [] });
     await Wishlist.create({ userId: user._id, items: [] });
 
@@ -46,6 +52,7 @@ router.post(
         id: user.id,
         name: user.name,
         email: user.email,
+        role: user.role,
         profileImageUrl: user.profileImageUrl || "",
       },
     });
@@ -68,6 +75,12 @@ router.post(
     const match = await bcrypt.compare(password, user.passwordHash);
     if (!match) return res.status(401).json({ message: "Invalid credentials" });
 
+    const expectedRole = resolveRoleForEmail(user.email, user.role);
+    if (user.role !== expectedRole) {
+      user.role = expectedRole;
+      await user.save();
+    }
+
     const token = issueToken(user);
     return res.json({
       token,
@@ -75,6 +88,7 @@ router.post(
         id: user.id,
         name: user.name,
         email: user.email,
+        role: user.role,
         profileImageUrl: user.profileImageUrl || "",
       },
     });

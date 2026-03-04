@@ -8,10 +8,11 @@ import cartRoutes from "./routes/cart.js";
 import orderRoutes from "./routes/orders.js";
 import wishlistRoutes from "./routes/wishlist.js";
 import userRoutes from "./routes/users.js";
+import adminRoutes from "./routes/admin.js";
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true, service: "cartify-backend" });
@@ -23,6 +24,7 @@ app.use("/api/cart", cartRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/wishlist", wishlistRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/admin", adminRoutes);
 
 app.use((err, _req, res, _next) => {
   console.error(err);
@@ -31,9 +33,28 @@ app.use((err, _req, res, _next) => {
 
 connectMongo()
   .then(() => {
-    app.listen(env.port, () => {
-      console.log(`Cartify backend listening on http://localhost:${env.port}`);
-    });
+    const maxPortTries = env.nodeEnv === "development" ? 10 : 1;
+    const startServer = (port, triesLeft) => {
+      const server = app.listen(port, () => {
+        console.log(`Cartify backend listening on http://localhost:${port}`);
+      });
+
+      server.on("error", (error) => {
+        if (error.code === "EADDRINUSE" && triesLeft > 1) {
+          const nextPort = port + 1;
+          console.warn(
+            `Port ${port} is already in use. Retrying on port ${nextPort}...`,
+          );
+          startServer(nextPort, triesLeft - 1);
+          return;
+        }
+
+        console.error(`Failed to start server on port ${port}`, error);
+        process.exit(1);
+      });
+    };
+
+    startServer(env.port, maxPortTries);
   })
   .catch((error) => {
     console.error("Failed to connect to MongoDB", error);

@@ -10,10 +10,10 @@ object AuthColors {
     val Border = Color(0xFFE9E9EC)
     val Heading = Color(0xFF111111)
     val Body = Color(0xFF8E8E93)
-    val Primary = Color(0xFF7F56D9)
+    val Primary = Color(0xFFEA580C)
     val PrimaryText = Color(0xFFFFFFFF)
     val SoftError = Color(0xFFB46969)
-    val Link = Color(0xFF7F56D9)
+    val Link = Color(0xFFEA580C)
     val Success = Color(0xFF2EB872)
 }
 

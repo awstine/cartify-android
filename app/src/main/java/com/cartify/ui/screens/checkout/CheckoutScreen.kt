@@ -126,7 +126,7 @@ private fun SummaryRow(label: String, amount: Double, strong: Boolean = false) {
             fontWeight = if (strong) FontWeight.Bold else FontWeight.Normal
         )
         Text(
-            text = "$${String.format("%.2f", amount)}",
+            text = "KSh ${String.format("%.2f", amount)}",
             fontWeight = if (strong) FontWeight.ExtraBold else FontWeight.SemiBold,
             color = if (strong) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
         )

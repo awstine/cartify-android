@@ -6,6 +6,18 @@ const productSchema = new mongoose.Schema(
     description: { type: String, default: "" },
     category: { type: String, default: "general" },
     imageUrl: { type: String, default: "" },
+    images: {
+      type: [String],
+      default: [],
+      validate: {
+        validator: (value) => Array.isArray(value) && value.length <= 4,
+        message: "A product can have up to 4 images",
+      },
+    },
+    costPrice: { type: Number, min: 0, default: 0 },
+    salePrice: { type: Number, min: 0, default: 0 },
+    stockQty: { type: Number, min: 0, default: 0 },
+    status: { type: String, enum: ["active", "draft"], default: "active" },
     price: { type: Number, required: true, min: 0 },
   },
   { timestamps: true }

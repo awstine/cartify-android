@@ -36,16 +36,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import com.cartify.data.model.Product
 import com.cartify.ui.components.AppPrimaryButton
 import com.cartify.ui.components.CategoryPill
 import com.cartify.ui.components.CircularIconButton
+import com.cartify.ui.components.ProductImage
 import com.cartify.ui.components.SoftCard
 import com.cartify.ui.theme.AppRadius
 import com.cartify.ui.theme.AppSpacing
@@ -112,8 +110,8 @@ fun ProductDetailsScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     items(listOf(1, 2, 3)) {
-                        AsyncImage(
-                            model = ImageRequest.Builder(LocalContext.current).data(product.imageUrl).crossfade(true).build(),
+                        ProductImage(
+                            model = product.imageUrl,
                             contentDescription = product.title,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier
@@ -129,7 +127,7 @@ fun ProductDetailsScreen(
         item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(product.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                Text("$${product.price}", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
+                Text("KSh ${"%.2f".format(product.price)}", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
 
                 val rating = product.rating?.rate ?: 0.0
                 val ratingCount = product.rating?.count ?: 0
@@ -208,8 +206,8 @@ fun ProductDetailsScreen(
                                 .clickable { onRelatedProductClick(related.id) }
                         ) {
                             Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                AsyncImage(
-                                    model = ImageRequest.Builder(LocalContext.current).data(related.imageUrl).crossfade(true).build(),
+                                ProductImage(
+                                    model = related.imageUrl,
                                     contentDescription = related.title,
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier
@@ -225,7 +223,7 @@ fun ProductDetailsScreen(
                                     fontWeight = FontWeight.SemiBold
                                 )
                                 Text(
-                                    "$${related.price}",
+                                    "KSh ${"%.2f".format(related.price)}",
                                     color = MaterialTheme.colorScheme.primary,
                                     fontWeight = FontWeight.Bold
                                 )

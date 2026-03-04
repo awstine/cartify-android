@@ -37,12 +37,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import com.cartify.data.model.Product
 import com.cartify.ui.components.AppBottomSheet
 import com.cartify.ui.components.AppEmptyState
@@ -50,6 +47,7 @@ import com.cartify.ui.components.AppErrorState
 import com.cartify.ui.components.AppPrimaryButton
 import com.cartify.ui.components.AppTextInput
 import com.cartify.ui.components.CategoryPill
+import com.cartify.ui.components.ProductImage
 import com.cartify.ui.components.ProductCardSkeleton
 import com.cartify.ui.components.SoftCard
 import com.cartify.ui.theme.AppRadius
@@ -71,7 +69,7 @@ fun ProductScreen(
     val uiState by viewModel.uiState.collectAsState()
     var showSearchSheet by remember { mutableStateOf(false) }
     var showGuestSheet by remember { mutableStateOf(false) }
-    val homeCategories = listOf("All", "Men", "Women", "Kids", "New", "Sale")
+    val homeCategories = remember(uiState.products, uiState.isLoading) { viewModel.allCategories() }
     val heroProducts = uiState.products.take(8)
     val heroListState = rememberLazyListState()
 
@@ -133,21 +131,11 @@ fun ProductScreen(
                             contentPadding = PaddingValues(horizontal = AppSpacing.lg),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            items(homeCategories) { label ->
+                            items(homeCategories) { category ->
                                 CategoryPill(
-                                    text = label,
-                                    selected = uiState.selectedCategory.equals(label, true),
-                                    onClick = {
-                                        val mapped = when (label) {
-                                            "Men" -> "mens-shirts"
-                                            "Women" -> "womens-dresses"
-                                            "Kids" -> "tops"
-                                            "New" -> "smartphones"
-                                            "Sale" -> "groceries"
-                                            else -> "All"
-                                        }
-                                        viewModel.onCategorySelected(mapped)
-                                    }
+                                    text = categoryLabel(category),
+                                    selected = uiState.selectedCategory.equals(category, true),
+                                    onClick = { viewModel.onCategorySelected(category) }
                                 )
                             }
                         }
@@ -281,8 +269,8 @@ private fun HeroProductCard(product: Product, onProductClick: () -> Unit) {
             .width(320.dp)
     ) {
         Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current).data(product.imageUrl).crossfade(true).build(),
+            ProductImage(
+                model = product.imageUrl,
                 contentDescription = product.title,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
@@ -319,8 +307,8 @@ private fun HomeProductCard(
             .clickable(onClick = onClick)
     ) {
         Column(modifier = Modifier.padding(10.dp)) {
-            AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current).data(product.imageUrl).crossfade(true).build(),
+            ProductImage(
+                model = product.imageUrl,
                 contentDescription = product.title,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
@@ -359,7 +347,7 @@ private fun HomeProductCard(
                     color = TextSecondary
                 )
             }
-            Text("$${product.price}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+            Text("KSh ${"%.2f".format(product.price)}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
         }
     }
 }

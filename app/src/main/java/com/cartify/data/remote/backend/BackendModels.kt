@@ -30,7 +30,8 @@ data class BackendProduct(
     val title: String,
     val description: String,
     val category: String,
-    val imageUrl: String,
+    val imageUrl: String? = null,
+    val images: List<String>? = null,
     val price: Double
 )
 

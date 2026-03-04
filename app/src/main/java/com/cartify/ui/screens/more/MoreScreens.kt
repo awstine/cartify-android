@@ -1,7 +1,12 @@
 package com.cartify.ui.screens.more
 
 import android.content.Intent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
@@ -17,11 +22,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Payment
 import androidx.compose.material.icons.filled.ReceiptLong
@@ -42,6 +49,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.layout.ContentScale
@@ -52,18 +61,26 @@ import androidx.activity.result.contract.ActivityResultContracts
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.cartify.data.remote.backend.BackendOrder
+import com.cartify.data.remote.backend.WishlistItem
 import com.cartify.data.remote.backend.UserProfileResponse
 import com.cartify.data.repository.BackendRepository
 import com.cartify.ui.components.AppCard
-import com.cartify.ui.components.AppPrimaryButton
+import com.cartify.ui.components.AppEmptyState
 import com.cartify.ui.components.AppTextInput
+import com.cartify.ui.components.ProductImage
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 @Composable
-fun CategoriesScreen(onCategoryClick: (String) -> Unit = {}) {
-    val categories = listOf(
-        "electronics", "fashion", "home-decoration", "beauty", "fragrances", "groceries"
-    )
+fun CategoriesScreen(
+    categories: List<String>,
+    onCategoryClick: (String) -> Unit = {}
+) {
+    val visibleCategories = categories
+        .map { it.trim() }
+        .filter { it.isNotBlank() && !it.equals("all", ignoreCase = true) }
+        .distinctBy { it.lowercase(Locale.getDefault()) }
+        .sortedBy { it.lowercase(Locale.getDefault()) }
 
     Column(
         modifier = Modifier
@@ -84,8 +101,7 @@ fun CategoriesScreen(onCategoryClick: (String) -> Unit = {}) {
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            items(categories.size) { index ->
-                val category = categories[index]
+            items(visibleCategories, key = { it }) { category ->
                 Card(
                     modifier = Modifier.clickable { onCategoryClick(category) },
                     shape = RoundedCornerShape(18.dp),
@@ -100,7 +116,7 @@ fun CategoriesScreen(onCategoryClick: (String) -> Unit = {}) {
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            category.replaceFirstChar { it.uppercase() },
+                            prettyCategoryLabel(category),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -114,6 +130,18 @@ fun CategoriesScreen(onCategoryClick: (String) -> Unit = {}) {
             }
         }
     }
+}
+
+private fun prettyCategoryLabel(raw: String): String {
+    return raw
+        .replace("-", " ")
+        .split(" ")
+        .filter { it.isNotBlank() }
+        .joinToString(" ") { part ->
+            part.lowercase(Locale.getDefault()).replaceFirstChar { ch ->
+                if (ch.isLowerCase()) ch.titlecase(Locale.getDefault()) else ch.toString()
+            }
+        }
 }
 
 @Composable
@@ -198,6 +226,7 @@ fun ProfileScreen(
     var actionError by remember { mutableStateOf<String?>(null) }
     var isSaving by remember { mutableStateOf(false) }
     var isDeleting by remember { mutableStateOf(false) }
+    var revealSections by remember { mutableStateOf(false) }
 
     LaunchedEffect(dynamicState.profileImageUrl) {
         if (selectedImageRef.isBlank() && dynamicState.profileImageUrl.isNotBlank()) {
@@ -211,6 +240,10 @@ fun ProfileScreen(
 
     LaunchedEffect(notificationsEnabled) {
         onNotificationsChanged(notificationsEnabled)
+    }
+
+    LaunchedEffect(Unit) {
+        revealSections = true
     }
 
     fun persistPreferences() {
@@ -246,26 +279,32 @@ fun ProfileScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 18.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
-            AppCard {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
+            ProfileSection(visible = revealSections, delayMillis = 0) {
+                GlassCard {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.09f))
+                            .padding(horizontal = 18.dp, vertical = 16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        Text(
+                            "Personal Hub",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
                         Box(
                             modifier = Modifier
-                                .size(56.dp)
+                                .scale(if (revealSections) 1f else 0.94f)
+                                .size(86.dp)
                                 .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)),
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)),
                             contentAlignment = Alignment.Center
                         ) {
                             if (selectedImageRef.isNotBlank()) {
@@ -277,264 +316,375 @@ fun ProfileScreen(
                                     contentDescription = "Profile image",
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier
-                                        .size(56.dp)
+                                        .size(86.dp)
                                         .clip(CircleShape)
                                 )
                             } else {
                                 Text(
                                     dynamicState.initial,
-                                    style = MaterialTheme.typography.titleLarge,
+                                    style = MaterialTheme.typography.headlineMedium,
                                     color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.ExtraBold
                                 )
                             }
                         }
-                        Column(
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(start = 12.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Text(
-                                editableName,
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                editableEmail,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
 
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        "Member since ${dynamicState.memberSince}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    if (!dynamicState.error.isNullOrBlank()) {
                         Text(
-                            dynamicState.error ?: "",
+                            editableName,
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.ExtraBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            editableEmail,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
-                    }
-                }
-            }
-        }
 
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                ProfileStatCard(
-                    title = "Orders",
-                    value = dynamicState.ordersCount.toString(),
-                    modifier = Modifier.weight(1f)
-                )
-                ProfileStatCard(
-                    title = "Wishlist",
-                    value = dynamicState.wishlistCount.toString(),
-                    modifier = Modifier.weight(1f)
-                )
-                ProfileStatCard(
-                    title = "Status",
-                    value = if (dynamicState.isLoading) "Syncing" else "Active",
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
-
-        item {
-            AppCard {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Text("Edit Profile", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    AppTextInput(
-                        value = editableName,
-                        onValueChange = { editableName = it },
-                        label = "Full name"
-                    )
-                    AppTextInput(
-                        value = editableEmail,
-                        onValueChange = { editableEmail = it },
-                        label = "Email address"
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        AppPrimaryButton(
-                            text = "Choose Image",
-                            onClick = { imagePicker.launch(arrayOf("image/*")) },
-                            modifier = Modifier.weight(1f)
-                        )
-                        AppPrimaryButton(
-                            text = "Remove",
-                            onClick = { selectedImageRef = "" },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                    AppPrimaryButton(
-                        text = if (isSaving) "Saving..." else "Save profile",
-                        enabled = !isSaving && !isDeleting,
-                        onClick = {
-                            actionError = null
-                            actionMessage = null
-                            val authToken = token?.trim().orEmpty()
-                            if (authToken.isBlank()) {
-                                actionError = "Session expired. Sign in again."
-                                return@AppPrimaryButton
-                            }
-                            if (editableName.trim().length < 2) {
-                                actionError = "Name must have at least 2 characters"
-                                return@AppPrimaryButton
-                            }
-                            if (!editableEmail.contains("@")) {
-                                actionError = "Enter a valid email"
-                                return@AppPrimaryButton
-                            }
-
-                            isSaving = true
-                            scope.launch {
-                                val uploadableImageUrl = if (
-                                    selectedImageRef.startsWith("http://") || selectedImageRef.startsWith("https://")
-                                ) {
-                                    selectedImageRef
-                                } else {
-                                    dynamicState.profileImageUrl.takeIf {
-                                        it.startsWith("http://") || it.startsWith("https://")
-                                    } ?: ""
-                                }
-                                runCatching {
-                                    repository.updateProfile(
-                                        token = authToken,
-                                        name = editableName.trim(),
-                                        email = editableEmail.trim(),
-                                        profileImageUrl = uploadableImageUrl,
-                                        notificationsEnabled = notificationsEnabled,
-                                        darkModeEnabled = darkModeEnabled
-                                    )
-                                }
-                                    .onSuccess { updated ->
-                                        onProfileUpdated(updated.copy(profileImageUrl = selectedImageRef.ifBlank { updated.profileImageUrl }))
-                                        actionMessage = "Profile updated"
-                                    }
-                                    .onFailure {
-                                        actionError = it.message ?: "Unable to update profile"
-                                    }
-                                isSaving = false
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    if (!actionMessage.isNullOrBlank()) {
-                        Text(actionMessage ?: "", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
-                    }
-                    if (!actionError.isNullOrBlank()) {
-                        Text(actionError ?: "", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                    }
-                }
-            }
-        }
-
-        item {
-            AppCard {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    ProfileItemRow(
-                        icon = Icons.Default.ReceiptLong,
-                        title = "Orders history",
-                        subtitle = "Track past purchases",
-                        onClick = onOpenOrders
-                    )
-                    ProfileItemRow(Icons.Default.LocationOn, "Addresses", "Manage shipping addresses")
-                    ProfileItemRow(Icons.Default.Payment, "Payment methods", "Cards and payment options")
-                }
-            }
-        }
-
-        item {
-            AppCard {
-                Column(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Notifications", fontWeight = FontWeight.SemiBold)
-                        Switch(
-                            checked = notificationsEnabled,
-                            onCheckedChange = {
-                                notificationsEnabled = it
-                                persistPreferences()
-                            }
-                        )
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Dark mode", fontWeight = FontWeight.SemiBold)
-                        Switch(
-                            checked = darkModeEnabled,
-                            onCheckedChange = {
-                                darkModeEnabled = it
-                                persistPreferences()
-                            }
-                        )
-                    }
-                }
-            }
-        }
-
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                AppPrimaryButton(
-                    text = if (isDeleting) "Deleting..." else "Delete account",
-                    enabled = !isDeleting && !isSaving,
-                    onClick = {
-                        val authToken = token?.trim().orEmpty()
-                        if (authToken.isBlank()) {
-                            actionError = "Session expired. Sign in again."
-                            return@AppPrimaryButton
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            ProfileMetricChip("Orders", dynamicState.ordersCount.toString(), Modifier.weight(1f))
+                            ProfileMetricChip("Wishlist", dynamicState.wishlistCount.toString(), Modifier.weight(1f))
+                            ProfileMetricChip("Member", dynamicState.memberSince.take(4), Modifier.weight(1f))
                         }
-                        isDeleting = true
-                        scope.launch {
-                            runCatching { repository.deleteAccount(authToken) }
-                                .onSuccess {
-                                    onAccountDeleted()
-                                }
-                                .onFailure {
-                                    actionError = it.message ?: "Unable to delete account"
-                                }
-                            isDeleting = false
+
+                        if (!dynamicState.error.isNullOrBlank()) {
+                            Text(
+                                dynamicState.error ?: "",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error
+                            )
                         }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                AppPrimaryButton(
-                    text = "Logout",
-                    onClick = onLogout,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                    }
+                }
             }
         }
+
+        item {
+            ProfileSection(visible = revealSections, delayMillis = 70) {
+                GlassCard {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text("Controls", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Notifications", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                            Switch(
+                                checked = notificationsEnabled,
+                                onCheckedChange = {
+                                    notificationsEnabled = it
+                                    persistPreferences()
+                                }
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Dark mode", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                            Switch(
+                                checked = darkModeEnabled,
+                                onCheckedChange = {
+                                    darkModeEnabled = it
+                                    persistPreferences()
+                                }
+                            )
+                        }
+                        ProfileActionButton(
+                            text = "Open Orders",
+                            icon = Icons.Default.ReceiptLong,
+                            onClick = onOpenOrders,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            ProfileActionButton(
+                                text = "Upload Photo",
+                                icon = Icons.Default.LocationOn,
+                                onClick = { imagePicker.launch(arrayOf("image/*")) },
+                                modifier = Modifier.weight(1f)
+                            )
+                            ProfileActionButton(
+                                text = "Clear Photo",
+                                icon = Icons.Default.DeleteOutline,
+                                onClick = { selectedImageRef = "" },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            ProfileSection(visible = revealSections, delayMillis = 130) {
+                GlassCard {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text("Edit Identity", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                        AppTextInput(
+                            value = editableName,
+                            onValueChange = { editableName = it },
+                            label = "Full name"
+                        )
+                        AppTextInput(
+                            value = editableEmail,
+                            onValueChange = { editableEmail = it },
+                            label = "Email address"
+                        )
+                        Text(
+                            "Member since ${dynamicState.memberSince}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        ProfileActionButton(
+                            text = if (isSaving) "Saving..." else "Save changes",
+                            icon = Icons.Default.Payment,
+                            enabled = !isSaving && !isDeleting,
+                            onClick = {
+                                actionError = null
+                                actionMessage = null
+                                val authToken = token?.trim().orEmpty()
+                                if (authToken.isBlank()) {
+                                    actionError = "Session expired. Sign in again."
+                                    return@ProfileActionButton
+                                }
+                                if (editableName.trim().length < 2) {
+                                    actionError = "Name must have at least 2 characters"
+                                    return@ProfileActionButton
+                                }
+                                if (!editableEmail.contains("@")) {
+                                    actionError = "Enter a valid email"
+                                    return@ProfileActionButton
+                                }
+
+                                isSaving = true
+                                scope.launch {
+                                    val uploadableImageUrl = if (
+                                        selectedImageRef.startsWith("http://") || selectedImageRef.startsWith("https://")
+                                    ) {
+                                        selectedImageRef
+                                    } else {
+                                        dynamicState.profileImageUrl.takeIf {
+                                            it.startsWith("http://") || it.startsWith("https://")
+                                        } ?: ""
+                                    }
+                                    runCatching {
+                                        repository.updateProfile(
+                                            token = authToken,
+                                            name = editableName.trim(),
+                                            email = editableEmail.trim(),
+                                            profileImageUrl = uploadableImageUrl,
+                                            notificationsEnabled = notificationsEnabled,
+                                            darkModeEnabled = darkModeEnabled
+                                        )
+                                    }
+                                        .onSuccess { updated ->
+                                            onProfileUpdated(updated.copy(profileImageUrl = selectedImageRef.ifBlank { updated.profileImageUrl }))
+                                            actionMessage = "Profile updated"
+                                        }
+                                        .onFailure {
+                                            actionError = it.message ?: "Unable to update profile"
+                                        }
+                                    isSaving = false
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        if (!actionMessage.isNullOrBlank()) {
+                            Text(actionMessage ?: "", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+                        }
+                        if (!actionError.isNullOrBlank()) {
+                            Text(actionError ?: "", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            ProfileSection(visible = revealSections, delayMillis = 190) {
+                GlassCard {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text("Danger Zone", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                        Text(
+                            "Deleting your account removes profile and shopping history.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            ProfileActionButton(
+                                text = if (isDeleting) "Deleting..." else "Delete account",
+                                icon = Icons.Default.DeleteOutline,
+                                enabled = !isDeleting && !isSaving,
+                                onClick = {
+                                    val authToken = token?.trim().orEmpty()
+                                    if (authToken.isBlank()) {
+                                        actionError = "Session expired. Sign in again."
+                                        return@ProfileActionButton
+                                    }
+                                    isDeleting = true
+                                    scope.launch {
+                                        runCatching { repository.deleteAccount(authToken) }
+                                            .onSuccess {
+                                                onAccountDeleted()
+                                            }
+                                            .onFailure {
+                                                actionError = it.message ?: "Unable to delete account"
+                                            }
+                                        isDeleting = false
+                                    }
+                                },
+                                modifier = Modifier.weight(1f),
+                                danger = true
+                            )
+                            ProfileActionButton(
+                                text = "Logout",
+                                icon = Icons.Default.ChevronRight,
+                                onClick = onLogout,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProfileSection(
+    visible: Boolean,
+    delayMillis: Int,
+    content: @Composable () -> Unit
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(animationSpec = tween(durationMillis = 320, delayMillis = delayMillis)) +
+            slideInVertically(
+                animationSpec = tween(durationMillis = 320, delayMillis = delayMillis),
+                initialOffsetY = { it / 5 }
+            )
+    ) {
+        content()
+    }
+}
+
+@Composable
+private fun GlassCard(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    AppCard(modifier = modifier) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            MaterialTheme.colorScheme.surface.copy(alpha = 0.90f),
+                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                        )
+                    )
+                )
+                .border(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f),
+                    shape = RoundedCornerShape(14.dp)
+                )
+        ) {
+            content()
+        }
+    }
+}
+
+@Composable
+private fun ProfileMetricChip(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
+            .padding(vertical = 10.dp, horizontal = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                value,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.ExtraBold
+            )
+            Text(
+                label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun ProfileActionButton(
+    text: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    danger: Boolean = false
+) {
+    val contentColor = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+    val bgColor = if (danger) {
+        MaterialTheme.colorScheme.error.copy(alpha = 0.10f)
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+    }
+    val borderColor = if (danger) {
+        MaterialTheme.colorScheme.error.copy(alpha = 0.35f)
+    } else {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+    }
+
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(bgColor)
+            .border(1.dp, borderColor, RoundedCornerShape(12.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 11.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = text, tint = contentColor, modifier = Modifier.size(18.dp))
+        Spacer(modifier = Modifier.size(8.dp))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelLarge,
+            color = contentColor
+        )
     }
 }
 
@@ -549,12 +699,24 @@ private fun ProfileItemRow(
         modifier = Modifier
             .fillMaxWidth()
             .let { base -> if (onClick != null) base.clickable { onClick() } else base }
-            .padding(vertical = 8.dp),
+            .background(
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
+                shape = RoundedCornerShape(14.dp)
+            )
+            .padding(horizontal = 10.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, contentDescription = title, tint = MaterialTheme.colorScheme.primary)
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, contentDescription = title, tint = MaterialTheme.colorScheme.primary)
+        }
         Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
@@ -562,11 +724,171 @@ private fun ProfileItemRow(
 }
 
 @Composable
-fun WishlistScreen() = SimpleListPage(
-    title = "Wishlist",
-    subtitle = "Saved items to buy later",
-    rows = listOf("Wireless headphones", "Running shoes", "Coffee maker", "Smart watch")
-)
+fun WishlistScreen(
+    token: String?,
+    onProductClick: (String) -> Unit = {},
+    onWishlistChanged: (Set<String>) -> Unit = {}
+) {
+    val repository = remember { BackendRepository() }
+    var state by remember(token) { mutableStateOf(WishlistUiState(isLoading = true)) }
+
+    LaunchedEffect(token) {
+        val authToken = token?.trim()
+        if (authToken.isNullOrEmpty()) {
+            state = WishlistUiState(error = "Missing session token")
+            return@LaunchedEffect
+        }
+
+        state = runCatching { repository.getWishlist(authToken) }
+            .fold(
+                onSuccess = { wishlist ->
+                    val ids = wishlist.items.map { it.productId }.toSet()
+                    onWishlistChanged(ids)
+                    WishlistUiState(items = wishlist.items)
+                },
+                onFailure = { WishlistUiState(error = it.message ?: "Unable to load wishlist") }
+            )
+    }
+
+    val scope = rememberCoroutineScope()
+    val authToken = token?.trim().orEmpty()
+    var removingProductId by remember { mutableStateOf<String?>(null) }
+    var actionError by remember { mutableStateOf<String?>(null) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(16.dp)
+    ) {
+        Text("Wishlist", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text(
+            "Saved items to buy later",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        when {
+            state.isLoading -> {
+                Spacer(modifier = Modifier.height(14.dp))
+                Text("Loading wishlist...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+
+            state.error != null -> {
+                Spacer(modifier = Modifier.height(14.dp))
+                Text(state.error ?: "Unable to load wishlist", color = MaterialTheme.colorScheme.error)
+            }
+
+            state.items.isEmpty() -> {
+                Spacer(modifier = Modifier.height(12.dp))
+                AppEmptyState("Wishlist is empty", "Save products and they will show here.")
+            }
+
+            else -> {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(state.items, key = { it.productId }) { item ->
+                        val product = item.product
+                        AppCard(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    onProductClick(item.productId)
+                                }
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                ProductImage(
+                                    model = product?.imageUrl.orEmpty(),
+                                    contentDescription = product?.title ?: "Wishlist product",
+                                    modifier = Modifier
+                                        .size(72.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+                                    contentScale = ContentScale.Crop
+                                )
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(start = 10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text(
+                                        product?.title ?: "Product unavailable",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        product?.category?.replaceFirstChar { it.uppercase() } ?: "Unknown category",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        "KSh ${"%.2f".format(product?.price ?: 0.0)}",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.error.copy(alpha = 0.12f))
+                                        .clickable(enabled = removingProductId != item.productId) {
+                                            if (authToken.isBlank()) return@clickable
+                                            removingProductId = item.productId
+                                            actionError = null
+                                            scope.launch {
+                                                runCatching { repository.removeWishlistItem(authToken, item.productId) }
+                                                    .onSuccess {
+                                                        val updatedIds =
+                                                            state.items.filterNot { it.productId == item.productId }.map { it.productId }.toSet()
+                                                        onWishlistChanged(updatedIds)
+                                                        state = WishlistUiState(
+                                                            items = state.items.filterNot { it.productId == item.productId }
+                                                        )
+                                                    }
+                                                    .onFailure {
+                                                        actionError = it.message ?: "Unable to remove item"
+                                                    }
+                                                removingProductId = null
+                                            }
+                                        }
+                                        .padding(8.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.DeleteOutline,
+                                        contentDescription = "Remove from wishlist",
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!actionError.isNullOrBlank()) {
+            Text(
+                actionError ?: "",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
+    }
+}
 
 @Composable
 fun OrdersScreen(token: String?) {
@@ -611,7 +933,7 @@ fun OrdersScreen(token: String?) {
                 val itemCount = order.items.sumOf { it.quantity }
                 val productPreview = order.items.take(2).joinToString(", ") { it.title }
                 val moreLabel = if (order.items.size > 2) " +${order.items.size - 2} more" else ""
-                "Order #$shortId - ${order.status.replaceFirstChar { it.uppercase() }} - $itemCount item(s): $productPreview$moreLabel - $${"%.2f".format(order.total)} - $date"
+                "Order #$shortId - ${order.status.replaceFirstChar { it.uppercase() }} - $itemCount item(s): $productPreview$moreLabel - KSh ${"%.2f".format(order.total)} - $date"
             }
             SimpleListPage(
                 title = "Orders",
@@ -626,7 +948,7 @@ fun OrdersScreen(token: String?) {
 fun OffersScreen() = SimpleListPage(
     title = "Offers",
     subtitle = "Latest campaigns and discounts",
-    rows = listOf("Up to 40% off electronics", "Weekend buy-1-get-1 fashion", "Free shipping over $50")
+    rows = listOf("Up to 40% off electronics", "Weekend buy-1-get-1 fashion", "Free shipping over KSh 50")
 )
 
 @Composable
@@ -689,6 +1011,12 @@ private data class OrdersUiState(
     val orders: List<BackendOrder> = emptyList()
 )
 
+private data class WishlistUiState(
+    val isLoading: Boolean = false,
+    val error: String? = null,
+    val items: List<WishlistItem> = emptyList()
+)
+
 private data class ProfileUiState(
     val name: String = "Cartify User",
     val email: String = "Signed in user",
@@ -715,11 +1043,12 @@ private fun ProfileStatCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.06f))
                 .padding(vertical = 12.dp, horizontal = 10.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(2.dp)
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
+            Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
             Text(
                 title,
                 style = MaterialTheme.typography.labelMedium,

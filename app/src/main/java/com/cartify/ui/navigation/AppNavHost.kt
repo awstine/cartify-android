@@ -3,8 +3,10 @@ package com.cartify.ui.navigation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -95,6 +97,20 @@ fun AppNavHost(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val backendRepository = remember { BackendRepository() }
+    var wishlistProductIds by remember { mutableStateOf(setOf<String>()) }
+
+    LaunchedEffect(isLoggedIn, session.token) {
+        val token = session.token?.trim().orEmpty()
+        if (!isLoggedIn || token.isBlank()) {
+            wishlistProductIds = emptySet()
+            return@LaunchedEffect
+        }
+
+        runCatching { backendRepository.getWishlist(token) }
+            .onSuccess { wishlist ->
+                wishlistProductIds = wishlist.items.map { it.productId }.toSet()
+            }
+    }
 
     val mainRoutes = setOf(
         NavigationItem.Products.route,
@@ -129,6 +145,21 @@ fun AppNavHost(
                 }
                 navController.navigate(action.returnRoute) { launchSingleTop = true }
             }
+            "ADD_TO_WISHLIST" -> {
+                val productId = action.payload?.productId
+                val product = productId?.let { productViewModel.productById(it) }
+                val backendId = product?.backendId?.trim().orEmpty()
+                val token = session.token?.trim().orEmpty()
+
+                if (backendId.isNotBlank() && token.isNotBlank()) {
+                    runCatching { backendRepository.addToWishlist(token, backendId) }
+                        .onSuccess {
+                            wishlistProductIds = wishlistProductIds + backendId
+                            snackbarHostState.showSnackbar("Added to wishlist")
+                        }
+                }
+                navController.navigate(action.returnRoute) { launchSingleTop = true }
+            }
             "OPEN_CART" -> navController.navigate(NavigationItem.Cart.route) { launchSingleTop = true }
             "OPEN_CHECKOUT" -> navController.navigate("${NavigationItem.Checkout.route}?subtotal=0.0&shipping=0.0&tax=0.0&discount=0.0&total=0.0") { launchSingleTop = true }
             "OPEN_WISHLIST" -> navController.navigate(NavigationItem.Wishlist.route) { launchSingleTop = true }
@@ -143,11 +174,19 @@ fun AppNavHost(
         topBar = {
             if (showMainShell) {
                 TopAppBar(
+                    modifier = Modifier.height(80.dp),
                     title = {
-                        Text(
-                            text = "Cartify",
-                            style = MaterialTheme.typography.titleLarge
-                        )
+                        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                            Text(
+                                text = "Cartify",
+                                style = MaterialTheme.typography.titleLarge
+                            )
+                            Text(
+                                text = "Smart shopping",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     },
                     actions = {
                         IconButton(onClick = {
@@ -156,7 +195,11 @@ fun AppNavHost(
                             } else {
                                 navController.navigate(NavigationItem.Login.route) { launchSingleTop = true }
                             }
-                        }) {
+                        }, modifier = Modifier
+                            .padding(end = 2.dp)
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))) {
                             val avatarSource = session.profileImageUrl?.trim().orEmpty()
                             if (avatarSource.isNotBlank()) {
                                 AsyncImage(
@@ -167,7 +210,7 @@ fun AppNavHost(
                                     contentDescription = "Profile",
                                     contentScale = ContentScale.Crop,
                                     modifier = Modifier
-                                        .size(28.dp)
+                                        .size(30.dp)
                                         .clip(CircleShape)
                                 )
                             } else {
@@ -178,14 +221,15 @@ fun AppNavHost(
                                     .uppercase()
                                 Box(
                                     modifier = Modifier
-                                        .size(28.dp)
-                                        .clip(CircleShape),
+                                        .size(30.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
                                         text = initials,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onPrimary
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.primary
                                     )
                                 }
                             }
@@ -194,20 +238,32 @@ fun AppNavHost(
                             if (currentRoute != NavigationItem.Cart.route) {
                                 navController.navigate(NavigationItem.Cart.route) { launchSingleTop = true }
                             }
-                        }) {
+                        }, modifier = Modifier
+                            .padding(end = 10.dp)
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))) {
                             if (cartItemCount > 0) {
                                 BadgedBox(badge = { Badge { Text(cartItemCount.toString()) } }) {
-                                    Icon(Icons.Default.ShoppingCart, contentDescription = "Cart")
+                                    Icon(
+                                        Icons.Default.ShoppingCart,
+                                        contentDescription = "Cart",
+                                        tint = MaterialTheme.colorScheme.onSurface
+                                    )
                                 }
                             } else {
-                                Icon(Icons.Default.ShoppingCart, contentDescription = "Cart")
+                                Icon(
+                                    Icons.Default.ShoppingCart,
+                                    contentDescription = "Cart",
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
                             }
                         }
                     },
-                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                        actionIconContentColor = MaterialTheme.colorScheme.onPrimary
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                        titleContentColor = MaterialTheme.colorScheme.onSurface,
+                        actionIconContentColor = MaterialTheme.colorScheme.onSurface
                     )
                 )
             }
@@ -284,6 +340,7 @@ fun AppNavHost(
             }
             composable(NavigationItem.Categories.route) {
                 CategoriesScreen(
+                    categories = productViewModel.allCategories(),
                     onCategoryClick = { category ->
                         productViewModel.onCategorySelected(category)
                         navController.navigate(NavigationItem.Products.route) { launchSingleTop = true }
@@ -292,7 +349,15 @@ fun AppNavHost(
             }
             composable(NavigationItem.Wishlist.route) {
                 if (isLoggedIn) {
-                    WishlistScreen()
+                    WishlistScreen(
+                        token = session.token,
+                        onProductClick = { backendProductId ->
+                            productViewModel.productByBackendId(backendProductId)?.let { product ->
+                                navController.navigate("product_details/${product.id}") { launchSingleTop = true }
+                            }
+                        },
+                        onWishlistChanged = { ids -> wishlistProductIds = ids }
+                    )
                 } else {
                     AuthRequiredScreen(
                         title = "Sign in to continue",
@@ -564,14 +629,42 @@ fun AppNavHost(
                 ProductDetailsScreen(
                     product = selectedProduct,
                     relatedProducts = selectedProduct?.let { productViewModel.relatedProducts(it, limit = 10) } ?: emptyList(),
-                    isFavorite = productId?.let { productViewModel.isLiked(it) } == true,
+                    isFavorite = selectedProduct?.backendId?.let { wishlistProductIds.contains(it) } == true,
                     onToggleFavorite = {
                         if (productId != null) {
+                            val product = productViewModel.productById(productId)
+                            val backendId = product?.backendId?.trim().orEmpty()
                             val allowed = authViewModel.requireAuth(
-                                actionName = "OPEN_WISHLIST",
-                                returnRoute = "product_details/$productId"
+                                actionName = "ADD_TO_WISHLIST",
+                                returnRoute = "product_details/$productId",
+                                payload = PendingActionPayload(productId = productId)
                             ) {
-                                productViewModel.toggleLike(productId)
+                                val token = session.token?.trim().orEmpty()
+                                if (backendId.isBlank() || token.isBlank()) {
+                                    scope.launch { snackbarHostState.showSnackbar("Unable to update wishlist") }
+                                } else {
+                                    scope.launch {
+                                        if (wishlistProductIds.contains(backendId)) {
+                                            runCatching { backendRepository.removeWishlistItem(token, backendId) }
+                                                .onSuccess {
+                                                    wishlistProductIds = wishlistProductIds - backendId
+                                                    snackbarHostState.showSnackbar("Removed from wishlist")
+                                                }
+                                                .onFailure {
+                                                    snackbarHostState.showSnackbar(it.message ?: "Unable to update wishlist")
+                                                }
+                                        } else {
+                                            runCatching { backendRepository.addToWishlist(token, backendId) }
+                                                .onSuccess {
+                                                    wishlistProductIds = wishlistProductIds + backendId
+                                                    snackbarHostState.showSnackbar("Added to wishlist")
+                                                }
+                                                .onFailure {
+                                                    snackbarHostState.showSnackbar(it.message ?: "Unable to update wishlist")
+                                                }
+                                        }
+                                    }
+                                }
                             }
                             if (!allowed) navController.navigate(NavigationItem.Login.route) { launchSingleTop = true }
                         }
