@@ -30,7 +30,22 @@ const schema = z.object({
     .array(z.string())
     .max(4, "A product can have up to 4 images")
     .optional(),
+  hasSizes: z.boolean().optional(),
+  sizesText: z.string().optional(),
   variantsJson: z.string().optional(),
+}).superRefine((values, ctx) => {
+  if (!values.hasSizes) return;
+  const parsed = String(values.sizesText || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (parsed.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["sizesText"],
+      message: "Add at least one size",
+    });
+  }
 });
 
 export const ProductModal = ({ isOpen, onClose, onSubmit, initialValues, loading, categories = [] }) => {
@@ -54,6 +69,8 @@ export const ProductModal = ({ isOpen, onClose, onSubmit, initialValues, loading
       description: "",
       imageUrl: "",
       images: [],
+      hasSizes: false,
+      sizesText: "",
       variantsJson: "[]",
     },
   });
@@ -78,12 +95,15 @@ export const ProductModal = ({ isOpen, onClose, onSubmit, initialValues, loading
         : initialValues?.imageUrl
           ? [initialValues.imageUrl]
           : [],
+      hasSizes: Array.isArray(initialValues?.sizes) && initialValues.sizes.length > 0,
+      sizesText: Array.isArray(initialValues?.sizes) ? initialValues.sizes.join(", ") : "",
       variantsJson: JSON.stringify(Array.isArray(initialValues?.variants) ? initialValues.variants : [], null, 2),
     });
   }, [initialValues, reset, isOpen]);
 
   const imageUrlValue = watch("imageUrl");
   const imagesValue = watch("images") || [];
+  const hasSizesValue = Boolean(watch("hasSizes"));
 
   const handleImageFileChange = (event) => {
     const files = Array.from(event.target.files || []).slice(0, 4);
@@ -151,6 +171,24 @@ export const ProductModal = ({ isOpen, onClose, onSubmit, initialValues, loading
         <Field label="Stock Qty" htmlFor="stockQty" error={errors.stockQty?.message}>
           <Input id="stockQty" type="number" min="0" {...register("stockQty")} />
         </Field>
+        <div className="md:col-span-2 rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+          <label htmlFor="hasSizes" className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-800 dark:text-slate-100">
+            <input id="hasSizes" type="checkbox" {...register("hasSizes")} />
+            This product has sizes
+          </label>
+          {hasSizesValue ? (
+            <div className="mt-3">
+              <Field
+                label="Available Sizes"
+                htmlFor="sizesText"
+                helperText="Comma separated: 38, 39, 40 or S, M, L, XL"
+                error={errors.sizesText?.message}
+              >
+                <Input id="sizesText" placeholder="S, M, L, XL" {...register("sizesText")} />
+              </Field>
+            </div>
+          ) : null}
+        </div>
         <Field label="Status" htmlFor="status" error={errors.status?.message}>
           <Select id="status" {...register("status")}>
             <option value="active">Active</option>

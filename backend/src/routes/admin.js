@@ -242,6 +242,8 @@ router.post(
     body("salePrice").optional().isFloat({ min: 0 }),
     body("stockQty").optional().isInt({ min: 0 }),
     body("status").optional().isString().isIn(["active", "draft"]),
+    body("sizes").optional().isArray({ max: 30 }),
+    body("sizes.*").optional().isString().trim().isLength({ min: 1, max: 20 }),
     body("variants").optional().isArray(),
     body("variants.*.sku").optional().isString(),
     body("variants.*.size").optional().isString(),
@@ -257,6 +259,9 @@ router.post(
     }
 
     const images = Array.isArray(req.body.images) ? req.body.images.filter(Boolean).slice(0, 4) : [];
+    const sizes = Array.isArray(req.body.sizes)
+      ? req.body.sizes.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 30)
+      : [];
     const imageUrl = req.body.imageUrl || images[0] || "";
 
     const product = await Product.create({
@@ -269,6 +274,7 @@ router.post(
       salePrice: Number(req.body.salePrice || 0),
       stockQty: Number(req.body.stockQty || 0),
       status: req.body.status || "active",
+      sizes,
       variants: Array.isArray(req.body.variants) ? req.body.variants : [],
       price: Number(req.body.price),
     });
@@ -297,6 +303,8 @@ router.put(
     body("salePrice").optional().isFloat({ min: 0 }),
     body("stockQty").optional().isInt({ min: 0 }),
     body("status").optional().isString().isIn(["active", "draft"]),
+    body("sizes").optional().isArray({ max: 30 }),
+    body("sizes.*").optional().isString().trim().isLength({ min: 1, max: 20 }),
     body("variants").optional().isArray(),
     body("variants.*.sku").optional().isString(),
     body("variants.*.size").optional().isString(),
@@ -327,6 +335,7 @@ router.put(
       salePrice,
       stockQty,
       status,
+      sizes,
       variants,
     } =
       req.body;
@@ -345,6 +354,9 @@ router.put(
     if (salePrice !== undefined) updates.salePrice = Number(salePrice);
     if (stockQty !== undefined) updates.stockQty = Number(stockQty);
     if (typeof status === "string") updates.status = status;
+    if (Array.isArray(sizes)) {
+      updates.sizes = sizes.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 30);
+    }
     if (Array.isArray(variants)) updates.variants = variants;
 
     const product = await Product.findByIdAndUpdate(req.params.id, updates, {

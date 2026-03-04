@@ -6,6 +6,21 @@ import { EmptyState, ErrorState, LoadingState } from "../components/ui/States";
 import { useToast } from "../context/ToastContext";
 
 const formatMoney = (value) => new Intl.NumberFormat("en-KE", { style: "currency", currency: "KES" }).format(Number(value || 0));
+const renderStars = (rating) => {
+  const normalized = Math.max(0, Math.min(5, Number(rating || 0)));
+  return Array.from({ length: 5 }).map((_, index) => {
+    const filled = index + 1 <= Math.round(normalized);
+    return (
+      <svg
+        key={`star-${index}`}
+        viewBox="0 0 24 24"
+        className={`h-3.5 w-3.5 ${filled ? "fill-amber-400 text-amber-400" : "fill-slate-200 text-slate-200"}`}
+      >
+        <path d="m12 3.2 2.8 5.7 6.3.9-4.6 4.5 1.1 6.3L12 17.7l-5.6 2.9 1.1-6.3-4.6-4.5 6.3-.9L12 3.2Z" />
+      </svg>
+    );
+  });
+};
 
 export const StoreCartPage = () => {
   const navigate = useNavigate();
@@ -129,12 +144,12 @@ export const StoreCartPage = () => {
         <EmptyState title="Your cart is empty" description="Add products to continue checkout." action={<Link to="/"><Button>Browse Products</Button></Link>} />
       ) : (
         <>
-          <div className="mt-5 grid gap-4 lg:grid-cols-3 lg:items-start">
-            <div className="space-y-3 lg:col-span-2">
+          <div className="mt-5 grid gap-4 xl:grid-cols-3 xl:items-start">
+            <div className="space-y-3 xl:col-span-2">
             {items.map((item) => (
               <article key={item.productId} className="rounded-2xl border border-slate-200 bg-white p-3 sm:p-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                  <div className="h-36 w-full overflow-hidden rounded-lg bg-slate-100 sm:h-16 sm:w-16 sm:shrink-0">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-[5rem_minmax(0,1fr)] sm:items-center">
+                  <div className="h-40 w-full overflow-hidden rounded-lg bg-slate-100 sm:h-20 sm:w-20">
                     {item.product?.imageUrl ? (
                       <img src={item.product.imageUrl} alt={item.product?.title || "Product"} className="h-full w-full object-cover" />
                     ) : null}
@@ -148,12 +163,12 @@ export const StoreCartPage = () => {
                   </div>
                 </div>
                 <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-50 p-1 sm:w-auto sm:justify-start">
-                    <Button variant="secondary" className="px-3" onClick={() => updateQty(item.productId, -1)}>
+                  <div className="inline-flex w-full items-center justify-between rounded-xl bg-slate-50 p-1 sm:w-auto sm:justify-start sm:gap-2">
+                    <Button variant="secondary" className="h-9 w-9 px-0" onClick={() => updateQty(item.productId, -1)}>
                       -
                     </Button>
-                    <span className="min-w-8 text-center text-sm font-semibold">{item.quantity}</span>
-                    <Button variant="secondary" className="px-3" onClick={() => updateQty(item.productId, 1)}>
+                    <span className="min-w-10 text-center text-sm font-semibold">{item.quantity}</span>
+                    <Button variant="secondary" className="h-9 w-9 px-0" onClick={() => updateQty(item.productId, 1)}>
                       +
                     </Button>
                   </div>
@@ -164,13 +179,13 @@ export const StoreCartPage = () => {
               </article>
             ))}
             </div>
-            <aside className="rounded-2xl border border-slate-200 bg-white p-4 lg:sticky lg:top-24">
+            <aside className="rounded-2xl border border-slate-200 bg-white p-4 xl:sticky xl:top-24">
               <h2 className="text-lg font-semibold text-slate-900">Order Summary</h2>
               <div className="mt-3 space-y-2 text-sm">
-                <div className="flex justify-between"><span>Subtotal</span><span>{formatMoney(summary.subtotal)}</span></div>
-                <div className="flex justify-between"><span>Shipping</span><span>{formatMoney(summary.shipping)}</span></div>
-                <div className="flex justify-between"><span>Tax</span><span>{formatMoney(summary.tax)}</span></div>
-                <div className="flex justify-between border-t border-slate-200 pt-2 font-bold"><span>Total</span><span>{formatMoney(summary.total)}</span></div>
+                <div className="flex items-center justify-between gap-2"><span>Subtotal</span><span className="text-right">{formatMoney(summary.subtotal)}</span></div>
+                <div className="flex items-center justify-between gap-2"><span>Shipping</span><span className="text-right">{formatMoney(summary.shipping)}</span></div>
+                <div className="flex items-center justify-between gap-2"><span>Tax</span><span className="text-right">{formatMoney(summary.tax)}</span></div>
+                <div className="flex items-center justify-between gap-2 border-t border-slate-200 pt-2 font-bold"><span>Total</span><span className="text-right">{formatMoney(summary.total)}</span></div>
               </div>
               <Button className="mt-4 w-full" onClick={checkout} loading={submitting}>
                 Checkout
@@ -182,9 +197,14 @@ export const StoreCartPage = () => {
             <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
               <h2 className="text-lg font-semibold text-slate-900">More Products You May Like</h2>
               <p className="mt-1 text-sm text-slate-600">Discover more items while you checkout.</p>
-              <div className="mt-4 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+              <div className="mt-4 grid grid-cols-2 gap-3 sm:gap-4">
                 {moreProducts.map((product) => {
                   const isOut = Number(product.stockQty || 0) <= 0;
+                  const reviewCount = Array.isArray(product.reviews) ? product.reviews.length : 0;
+                  const avgRating =
+                    reviewCount > 0
+                      ? (product.reviews || []).reduce((sum, item) => sum + Number(item.rating || 0), 0) / reviewCount
+                      : 0;
                   return (
                     <article
                       key={product._id}
@@ -207,7 +227,21 @@ export const StoreCartPage = () => {
                         )}
                       </div>
                       <p className="mt-2 truncate text-sm font-semibold text-slate-900">{product.title}</p>
-                      <p className="text-xs text-slate-600">{formatMoney(product.salePrice > 0 ? product.salePrice : product.price)}</p>
+                      <p className="text-xs text-slate-500">{product.category || "general"}</p>
+                      <p className="mt-1 min-h-9 text-xs text-slate-600">
+                        {String(product.description || "No description available.").slice(0, 70)}
+                        {String(product.description || "").length > 70 ? "..." : ""}
+                      </p>
+                      <p className="mt-2 text-sm font-bold text-slate-900">{formatMoney(product.salePrice > 0 ? product.salePrice : product.price)}</p>
+                      <div className="flex items-center gap-1">
+                        {renderStars(avgRating)}
+                        <p className="text-[11px] text-amber-700">
+                          {reviewCount > 0 ? `${avgRating.toFixed(1)} (${reviewCount})` : "No reviews"}
+                        </p>
+                      </div>
+                      <p className={`mt-1 text-xs ${isOut ? "text-red-600" : "text-slate-500"}`}>
+                        {isOut ? "Out of stock" : `Stock: ${Number(product.stockQty || 0)}`}
+                      </p>
                       <Button
                         className="mt-2 w-full"
                         disabled={isOut}

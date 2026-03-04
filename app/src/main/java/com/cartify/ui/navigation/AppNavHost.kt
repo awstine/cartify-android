@@ -305,6 +305,7 @@ fun AppNavHost(
             composable(NavigationItem.Categories.route) {
                 CategoriesScreen(
                     categories = productViewModel.allCategories(),
+                    categoryImages = productViewModel.categoryImageMap(),
                     onCategoryClick = { category ->
                         productViewModel.onCategorySelected(category)
                         navController.navigate(NavigationItem.Products.route) { launchSingleTop = true }

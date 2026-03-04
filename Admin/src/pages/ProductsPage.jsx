@@ -15,6 +15,12 @@ import { api, consumePrefetchedGet } from "../api";
 
 const LIMIT = 12;
 
+const parseSizes = (sizesText) =>
+  String(sizesText || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
 export const ProductsPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { showToast } = useToast();
@@ -127,8 +133,14 @@ export const ProductsPage = () => {
       description: values.description || "",
       imageUrl: values.imageUrl || "",
       images: Array.isArray(values.images) ? values.images.slice(0, 4) : values.imageUrl ? [values.imageUrl] : [],
+      sizes: values.hasSizes ? parseSizes(values.sizesText).slice(0, 30) : [],
       variants,
     };
+    if (values.hasSizes && payload.sizes.length === 0) {
+      showToast({ type: "error", title: "Add at least one size" });
+      setSubmitting(false);
+      return;
+    }
     try {
       if (editingProduct?._id) {
         await api.put(`/admin/products/${editingProduct._id}`, payload);

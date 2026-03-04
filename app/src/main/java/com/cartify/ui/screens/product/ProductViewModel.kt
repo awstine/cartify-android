@@ -115,6 +115,23 @@ class ProductViewModel(
         return listOf("All") + base
     }
 
+    fun categoryImageMap(): Map<String, String> {
+        val state = productRepository.getProductsState().value
+        if (state !is ProductDataState.Success) return emptyMap()
+        return state.products
+            .asSequence()
+            .filter { it.category.isNotBlank() }
+            .groupBy { it.category.trim().lowercase() }
+            .mapValues { (_, products) ->
+                products
+                    .asSequence()
+                    .flatMap { p -> (p.imageUrls + listOf(p.imageUrl)).asSequence() }
+                    .map { it.trim() }
+                    .firstOrNull { it.isNotBlank() }
+                    .orEmpty()
+            }
+    }
+
     fun addToCart(product: Product) {
         cartRepository.addToCart(product)
     }

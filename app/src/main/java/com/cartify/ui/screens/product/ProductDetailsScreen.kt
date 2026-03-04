@@ -14,10 +14,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -283,40 +281,50 @@ fun ProductDetailsScreen(
             }
 
             item {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(relatedProducts, key = { it.id }) { related ->
-                        SoftCard(
-                            modifier = Modifier
-                                .width(170.dp)
-                                .clickable { onRelatedProductClick(related.id) }
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    relatedProducts.chunked(2).forEach { rowProducts ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                ProductImage(
-                                    model = related.imageUrl,
-                                    contentDescription = related.title,
-                                    contentScale = ContentScale.Crop,
+                            rowProducts.forEach { related ->
+                                SoftCard(
                                     modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(110.dp)
-                                        .clip(RoundedCornerShape(AppRadius.md))
-                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
-                                )
-                                Text(
-                                    related.title,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Text(
-                                    if (related.stock > 0) "Stock: ${related.stock}" else "Out of stock",
-                                    color = if (related.stock > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                                    style = MaterialTheme.typography.labelSmall
-                                )
-                                Text(
-                                    "KSh ${"%.2f".format(related.price)}",
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                        .weight(1f)
+                                        .clickable { onRelatedProductClick(related.id) }
+                                ) {
+                                    Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        ProductImage(
+                                            model = related.imageUrl,
+                                            contentDescription = related.title,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(110.dp)
+                                                .clip(RoundedCornerShape(AppRadius.md))
+                                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                                        )
+                                        Text(
+                                            related.title,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        Text(
+                                            if (related.stock > 0) "Stock: ${related.stock}" else "Out of stock",
+                                            color = if (related.stock > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                                            style = MaterialTheme.typography.labelSmall
+                                        )
+                                        Text(
+                                            "KSh ${"%.2f".format(related.price)}",
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                            if (rowProducts.size == 1) {
+                                Spacer(modifier = Modifier.weight(1f))
                             }
                         }
                     }

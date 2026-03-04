@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -380,6 +381,7 @@ private fun HomeProductCard(
 ) {
     SoftCard(
         modifier = modifier
+            .defaultMinSize(minHeight = 250.dp)
             .clip(RoundedCornerShape(AppRadius.md))
             .clickable(onClick = onClick)
     ) {
@@ -415,7 +417,8 @@ private fun HomeProductCard(
                 color = TextSecondary,
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.height(34.dp)
             )
             Spacer(modifier = Modifier.height(3.dp))
             val rating = product.rating?.rate ?: 0.0

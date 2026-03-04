@@ -14,11 +14,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -44,6 +45,7 @@ import com.cartify.ui.components.SoftCard
 import com.cartify.ui.navigation.NavigationItem
 import com.cartify.ui.screens.product.ProductViewModel
 import com.cartify.ui.theme.TextSecondary
+import java.util.Locale
 
 data class CartItemUiModel(val product: Product, val quantity: Int)
 
@@ -86,7 +88,23 @@ fun CartScreen(
         Text("Cart", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
 
         if (cartItems.isEmpty()) {
-            AppEmptyState("Cart is empty", "Add products to continue.")
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(vertical = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                item {
+                    AppEmptyState("Cart is empty", "Add products to continue.")
+                }
+                if (recommendationProducts.isNotEmpty()) {
+                    item {
+                        RecommendationsGrid(
+                            products = recommendationProducts,
+                            onProductClick = onProductClick
+                        )
+                    }
+                }
+            }
         } else {
             LazyColumn(
                 modifier = Modifier.weight(1f),
@@ -149,49 +167,10 @@ fun CartScreen(
 
                 if (recommendationProducts.isNotEmpty()) {
                     item {
-                        Text(
-                            "More products",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(top = 6.dp, bottom = 4.dp)
+                        RecommendationsGrid(
+                            products = recommendationProducts,
+                            onProductClick = onProductClick
                         )
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(recommendationProducts, key = { it.id }) { product ->
-                                SoftCard(
-                                    modifier = Modifier
-                                        .width(170.dp)
-                                        .clickable { onProductClick(product.id) }
-                                ) {
-                                    Column(
-                                        modifier = Modifier.padding(10.dp),
-                                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        ProductImage(
-                                            model = product.imageUrl,
-                                            contentDescription = product.title,
-                                            contentScale = ContentScale.Crop,
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .height(96.dp)
-                                                .clip(RoundedCornerShape(12.dp))
-                                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
-                                        )
-                                        Text(
-                                            product.title,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                        Text(
-                                            "KSh ${"%.2f".format(product.price)}",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.primary,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                }
-                            }
-                        }
                     }
                 }
             }
@@ -206,4 +185,103 @@ fun CartScreen(
             )
         }
     }
+}
+
+@Composable
+private fun RecommendationsGrid(
+    products: List<Product>,
+    onProductClick: (Int) -> Unit
+) {
+    Text(
+        "More products",
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(top = 6.dp, bottom = 4.dp)
+    )
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        products.chunked(2).forEach { rowProducts ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                rowProducts.forEach { product ->
+                    SoftCard(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { onProductClick(product.id) }
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            ProductImage(
+                                model = product.imageUrl,
+                                contentDescription = product.title,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(96.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                            )
+                    Text(
+                        product.title,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        product.category.replaceFirstChar { it.uppercase() },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        previewDescription(product.description),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    val rating = product.rating?.rate ?: 0.0
+                    val filledStars = rating.toInt().coerceIn(0, 5)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        repeat(5) { index ->
+                            Icon(
+                                imageVector = if (index < filledStars) Icons.Default.Star else Icons.Default.StarBorder,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(12.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text(
+                            text = String.format(Locale.US, "%.1f", rating),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TextSecondary
+                        )
+                    }
+                    Text(
+                        "KSh ${"%.2f".format(product.price)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+                if (rowProducts.size == 1) Spacer(modifier = Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+private fun previewDescription(text: String, maxWords: Int = 20): String {
+    val words = text.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+    if (words.size <= maxWords) return words.joinToString(" ")
+    return words.take(maxWords).joinToString(" ") + "..."
 }
