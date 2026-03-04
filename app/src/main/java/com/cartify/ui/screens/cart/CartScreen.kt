@@ -113,6 +113,11 @@ fun CartScreen(
                                 Text(item.product.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text("Color: Lavender  -  Size: M", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
                                 Text(
+                                    if (item.product.stock > 0) "Stock: ${item.product.stock}" else "Out of stock",
+                                    color = if (item.product.stock > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                                Text(
                                     "KSh ${"%.2f".format(item.product.price)}",
                                     color = MaterialTheme.colorScheme.primary,
                                     fontWeight = FontWeight.Bold
@@ -120,7 +125,11 @@ fun CartScreen(
                                 Spacer(modifier = Modifier.height(8.dp))
                                 QuantityStepper(
                                     quantity = item.quantity,
-                                    onIncrease = { cartViewModel.increaseQuantity(item.product.id) },
+                                    onIncrease = {
+                                        if (item.quantity < item.product.stock) {
+                                            cartViewModel.increaseQuantity(item.product.id)
+                                        }
+                                    },
                                     onDecrease = { cartViewModel.decreaseQuantity(item.product.id) }
                                 )
                             }

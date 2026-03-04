@@ -23,4 +23,7 @@ export const env = {
   jwtSecret: requireEnv("JWT_SECRET"),
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || "7d",
   adminEmails: parseCsv(process.env.ADMIN_EMAILS),
+  superAdminEmails: parseCsv(process.env.SUPER_ADMIN_EMAILS),
+  managerEmails: parseCsv(process.env.MANAGER_EMAILS),
+  supportEmails: parseCsv(process.env.SUPPORT_EMAILS),
 };

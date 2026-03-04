@@ -12,6 +12,7 @@ data class Product(
     val description: String,
     val category: String,
     @SerializedName("image") val imageUrl: String,
+    val stock: Int = 0,
     val rating: ProductRating? = null,
 )
 

@@ -32,7 +32,11 @@ data class BackendProduct(
     val category: String,
     val imageUrl: String? = null,
     val images: List<String>? = null,
-    val price: Double
+    val price: Double,
+    val stock: Int? = null,
+    @SerializedName("stockQty") val stockQty: Int? = null,
+    val quantity: Int? = null,
+    @SerializedName("countInStock") val countInStock: Int? = null
 )
 
 data class BackendCartItem(

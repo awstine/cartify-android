@@ -33,7 +33,13 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 
 @Composable
-fun BottomNavigationBar(navController: NavController, cartItemCount: Int) {
+fun BottomNavigationBar(
+    navController: NavController,
+    cartItemCount: Int,
+    onRouteSelected: (String) -> Unit = { route ->
+        navController.navigate(route) { launchSingleTop = true }
+    }
+) {
     val items = listOf(
         NavigationItem.Products,
         NavigationItem.Categories,
@@ -74,9 +80,7 @@ fun BottomNavigationBar(navController: NavController, cartItemCount: Int) {
                     unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                 ),
                 onClick = {
-                    navController.navigate(item.route) {
-                        launchSingleTop = true
-                    }
+                    onRouteSelected(item.route)
                 }
             )
         }

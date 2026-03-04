@@ -68,8 +68,15 @@ private fun BackendProduct.toUiProduct(usedIds: MutableSet<Int>): Product {
         price = price,
         description = description,
         category = category.trim().ifBlank { "general" },
-        imageUrl = resolvedImageUrl()
+        imageUrl = resolvedImageUrl(),
+        stock = resolvedStock()
     )
+}
+
+private fun BackendProduct.resolvedStock(): Int {
+    return listOf(stockQty, stock, quantity, countInStock)
+        .firstOrNull { it != null && it >= 0 }
+        ?: 0
 }
 
 private fun BackendProduct.resolvedImageUrl(): String {

@@ -32,6 +32,14 @@ export const OrdersPage = () => {
   const [error, setError] = useState("");
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
+  const [shippingForm, setShippingForm] = useState({
+    courier: "",
+    trackingNumber: "",
+    eta: "",
+    eventLabel: "",
+    eventNote: "",
+  });
+  const [savingShipping, setSavingShipping] = useState(false);
 
   const loadOrders = async () => {
     setLoading(true);
@@ -78,6 +86,47 @@ export const OrdersPage = () => {
       await loadOrders();
     } catch (err) {
       showToast({ type: "error", title: "Failed to update status", message: err?.response?.data?.message || "Try again." });
+    }
+  };
+
+  useEffect(() => {
+    if (!selectedOrder) return;
+    setShippingForm({
+      courier: selectedOrder.shippingDetails?.courier || "",
+      trackingNumber: selectedOrder.shippingDetails?.trackingNumber || "",
+      eta: selectedOrder.shippingDetails?.eta ? String(selectedOrder.shippingDetails.eta).slice(0, 10) : "",
+      eventLabel: "",
+      eventNote: "",
+    });
+  }, [selectedOrder]);
+
+  const updateShipping = async () => {
+    if (!selectedOrder?._id) return;
+    setSavingShipping(true);
+    try {
+      const payload = {
+        courier: shippingForm.courier,
+        trackingNumber: shippingForm.trackingNumber,
+        eta: shippingForm.eta || undefined,
+      };
+      if (shippingForm.eventLabel.trim()) {
+        payload.event = {
+          label: shippingForm.eventLabel.trim(),
+          note: shippingForm.eventNote.trim(),
+        };
+      }
+      const response = await api.patch(`/admin/orders/${selectedOrder._id}/shipping`, payload);
+      setSelectedOrder(response.data);
+      showToast({ type: "success", title: "Shipping details updated" });
+      await loadOrders();
+    } catch (err) {
+      showToast({
+        type: "error",
+        title: "Failed to update shipping",
+        message: err?.response?.data?.message || "Try again.",
+      });
+    } finally {
+      setSavingShipping(false);
     }
   };
 
@@ -266,6 +315,75 @@ export const OrdersPage = () => {
               <div className="mt-2 flex justify-between border-t border-slate-200 pt-2 font-semibold dark:border-slate-700">
                 <span>Total</span>
                 <span>KSh {Number(selectedOrder.total || 0).toFixed(2)}</span>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-800">
+              <h4 className="mb-3 text-sm font-semibold">Shipping Workflow</h4>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <p className="mb-1 text-xs text-slate-500">Courier</p>
+                  <Input
+                    value={shippingForm.courier}
+                    onChange={(event) => setShippingForm((prev) => ({ ...prev, courier: event.target.value }))}
+                    placeholder="e.g. DHL, FedEx"
+                  />
+                </div>
+                <div>
+                  <p className="mb-1 text-xs text-slate-500">Tracking Number</p>
+                  <Input
+                    value={shippingForm.trackingNumber}
+                    onChange={(event) =>
+                      setShippingForm((prev) => ({ ...prev, trackingNumber: event.target.value }))
+                    }
+                    placeholder="Tracking code"
+                  />
+                </div>
+                <div>
+                  <p className="mb-1 text-xs text-slate-500">Estimated Delivery Date</p>
+                  <Input
+                    type="date"
+                    value={shippingForm.eta}
+                    onChange={(event) => setShippingForm((prev) => ({ ...prev, eta: event.target.value }))}
+                  />
+                </div>
+                <div>
+                  <p className="mb-1 text-xs text-slate-500">Timeline Event Label</p>
+                  <Input
+                    value={shippingForm.eventLabel}
+                    onChange={(event) => setShippingForm((prev) => ({ ...prev, eventLabel: event.target.value }))}
+                    placeholder="e.g. Picked up by courier"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <p className="mb-1 text-xs text-slate-500">Timeline Event Note</p>
+                  <Input
+                    value={shippingForm.eventNote}
+                    onChange={(event) => setShippingForm((prev) => ({ ...prev, eventNote: event.target.value }))}
+                    placeholder="Optional note"
+                  />
+                </div>
+              </div>
+              <div className="mt-3">
+                <Button loading={savingShipping} onClick={updateShipping}>
+                  Save Shipping Details
+                </Button>
+              </div>
+              <div className="mt-4">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Delivery Timeline</p>
+                {(selectedOrder.shippingDetails?.timeline || []).length === 0 ? (
+                  <p className="text-xs text-slate-500">No timeline events yet.</p>
+                ) : (
+                  <ul className="space-y-2 text-sm">
+                    {selectedOrder.shippingDetails.timeline.map((event, index) => (
+                      <li key={`${event.label}-${index}`} className="rounded-lg border border-slate-200 p-2 dark:border-slate-800">
+                        <p className="font-medium">{event.label}</p>
+                        {event.note ? <p className="text-xs text-slate-600 dark:text-slate-300">{event.note}</p> : null}
+                        <p className="text-[11px] text-slate-500">{new Date(event.at).toLocaleString()}</p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </div>
           </div>

@@ -34,10 +34,13 @@ import androidx.compose.material.icons.filled.Payment
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -723,6 +726,7 @@ private fun ProfileItemRow(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WishlistScreen(
     token: String?,
@@ -730,9 +734,10 @@ fun WishlistScreen(
     onWishlistChanged: (Set<String>) -> Unit = {}
 ) {
     val repository = remember { BackendRepository() }
+    var refreshTick by remember { mutableStateOf(0) }
     var state by remember(token) { mutableStateOf(WishlistUiState(isLoading = true)) }
 
-    LaunchedEffect(token) {
+    LaunchedEffect(token, refreshTick) {
         val authToken = token?.trim()
         if (authToken.isNullOrEmpty()) {
             state = WishlistUiState(error = "Missing session token")
@@ -754,146 +759,154 @@ fun WishlistScreen(
     val authToken = token?.trim().orEmpty()
     var removingProductId by remember { mutableStateOf<String?>(null) }
     var actionError by remember { mutableStateOf<String?>(null) }
+    val pullToRefreshState = rememberPullToRefreshState()
 
-    Column(
+    PullToRefreshBox(
+        isRefreshing = state.isLoading,
+        onRefresh = { refreshTick += 1 },
+        state = pullToRefreshState,
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .padding(16.dp)
     ) {
-        Text("Wishlist", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text(
-            "Saved items to buy later",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Column {
+            Text("Wishlist", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            Text(
+                "Saved items to buy later",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
-        when {
-            state.isLoading -> {
-                Spacer(modifier = Modifier.height(14.dp))
-                Text("Loading wishlist...", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+            when {
+                state.isLoading -> {
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text("Loading wishlist...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
 
-            state.error != null -> {
-                Spacer(modifier = Modifier.height(14.dp))
-                Text(state.error ?: "Unable to load wishlist", color = MaterialTheme.colorScheme.error)
-            }
+                state.error != null -> {
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text(state.error ?: "Unable to load wishlist", color = MaterialTheme.colorScheme.error)
+                }
 
-            state.items.isEmpty() -> {
-                Spacer(modifier = Modifier.height(12.dp))
-                AppEmptyState("Wishlist is empty", "Save products and they will show here.")
-            }
+                state.items.isEmpty() -> {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    AppEmptyState("Wishlist is empty", "Save products and they will show here.")
+                }
 
-            else -> {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    items(state.items, key = { it.productId }) { item ->
-                        val product = item.product
-                        AppCard(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    onProductClick(item.productId)
-                                }
-                        ) {
-                            Row(
+                else -> {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(state.items, key = { it.productId }) { item ->
+                            val product = item.product
+                            AppCard(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                    .clickable {
+                                        onProductClick(item.productId)
+                                    }
                             ) {
-                                ProductImage(
-                                    model = product?.imageUrl.orEmpty(),
-                                    contentDescription = product?.title ?: "Wishlist product",
+                                Row(
                                     modifier = Modifier
-                                        .size(72.dp)
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
-                                    contentScale = ContentScale.Crop
-                                )
-                                Column(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .padding(start = 10.dp),
-                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(
-                                        product?.title ?: "Product unavailable",
-                                        style = MaterialTheme.typography.titleSmall,
-                                        fontWeight = FontWeight.SemiBold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
+                                    ProductImage(
+                                        model = product?.imageUrl.orEmpty(),
+                                        contentDescription = product?.title ?: "Wishlist product",
+                                        modifier = Modifier
+                                            .size(72.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
+                                        contentScale = ContentScale.Crop
                                     )
-                                    Text(
-                                        product?.category?.replaceFirstChar { it.uppercase() } ?: "Unknown category",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    Text(
-                                        "KSh ${"%.2f".format(product?.price ?: 0.0)}",
-                                        style = MaterialTheme.typography.titleSmall,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-                                Box(
-                                    modifier = Modifier
-                                        .clip(CircleShape)
-                                        .background(MaterialTheme.colorScheme.error.copy(alpha = 0.12f))
-                                        .clickable(enabled = removingProductId != item.productId) {
-                                            if (authToken.isBlank()) return@clickable
-                                            removingProductId = item.productId
-                                            actionError = null
-                                            scope.launch {
-                                                runCatching { repository.removeWishlistItem(authToken, item.productId) }
-                                                    .onSuccess {
-                                                        val updatedIds =
-                                                            state.items.filterNot { it.productId == item.productId }.map { it.productId }.toSet()
-                                                        onWishlistChanged(updatedIds)
-                                                        state = WishlistUiState(
-                                                            items = state.items.filterNot { it.productId == item.productId }
-                                                        )
-                                                    }
-                                                    .onFailure {
-                                                        actionError = it.message ?: "Unable to remove item"
-                                                    }
-                                                removingProductId = null
+                                    Column(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .padding(start = 10.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Text(
+                                            product?.title ?: "Product unavailable",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.SemiBold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            product?.category?.replaceFirstChar { it.uppercase() } ?: "Unknown category",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            "KSh ${"%.2f".format(product?.price ?: 0.0)}",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(CircleShape)
+                                            .background(MaterialTheme.colorScheme.error.copy(alpha = 0.12f))
+                                            .clickable(enabled = removingProductId != item.productId) {
+                                                if (authToken.isBlank()) return@clickable
+                                                removingProductId = item.productId
+                                                actionError = null
+                                                scope.launch {
+                                                    runCatching { repository.removeWishlistItem(authToken, item.productId) }
+                                                        .onSuccess {
+                                                            val updatedIds =
+                                                                state.items.filterNot { it.productId == item.productId }.map { it.productId }.toSet()
+                                                            onWishlistChanged(updatedIds)
+                                                            state = WishlistUiState(
+                                                                items = state.items.filterNot { it.productId == item.productId }
+                                                            )
+                                                        }
+                                                        .onFailure {
+                                                            actionError = it.message ?: "Unable to remove item"
+                                                        }
+                                                    removingProductId = null
+                                                }
                                             }
-                                        }
-                                        .padding(8.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.DeleteOutline,
-                                        contentDescription = "Remove from wishlist",
-                                        tint = MaterialTheme.colorScheme.error
-                                    )
+                                            .padding(8.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.DeleteOutline,
+                                            contentDescription = "Remove from wishlist",
+                                            tint = MaterialTheme.colorScheme.error
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
-        }
 
-        if (!actionError.isNullOrBlank()) {
-            Text(
-                actionError ?: "",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(top = 8.dp)
-            )
+            if (!actionError.isNullOrBlank()) {
+                Text(
+                    actionError ?: "",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OrdersScreen(token: String?) {
     val repository = remember { BackendRepository() }
-    val state by produceState<OrdersUiState>(initialValue = OrdersUiState(isLoading = true), token) {
+    var refreshTick by remember { mutableStateOf(0) }
+    val state by produceState<OrdersUiState>(initialValue = OrdersUiState(isLoading = true), token, refreshTick) {
         val authToken = token?.trim()
         if (authToken.isNullOrEmpty()) {
             value = OrdersUiState(error = "Missing session token")
@@ -911,35 +924,143 @@ fun OrdersScreen(token: String?) {
         state.isLoading -> SimpleListPage(
             title = "Orders",
             subtitle = "Recent order activity",
-            rows = listOf("Loading orders...")
+            rows = listOf("Loading orders..."),
+            refreshing = state.isLoading,
+            onRefresh = { refreshTick += 1 }
         )
 
         state.error != null -> SimpleListPage(
             title = "Orders",
             subtitle = "Recent order activity",
-            rows = listOf(state.error ?: "Unable to load orders")
+            rows = listOf(state.error ?: "Unable to load orders"),
+            refreshing = state.isLoading,
+            onRefresh = { refreshTick += 1 }
         )
 
         state.orders.isEmpty() -> SimpleListPage(
             title = "Orders",
             subtitle = "Recent order activity",
-            rows = listOf("No orders yet")
+            rows = listOf("No orders yet"),
+            refreshing = state.isLoading,
+            onRefresh = { refreshTick += 1 }
         )
 
         else -> {
-            val rows = state.orders.map { order ->
-                val shortId = if (order.id.length > 8) order.id.takeLast(8) else order.id
-                val date = order.createdAt.take(10)
-                val itemCount = order.items.sumOf { it.quantity }
-                val productPreview = order.items.take(2).joinToString(", ") { it.title }
-                val moreLabel = if (order.items.size > 2) " +${order.items.size - 2} more" else ""
-                "Order #$shortId - ${order.status.replaceFirstChar { it.uppercase() }} - $itemCount item(s): $productPreview$moreLabel - KSh ${"%.2f".format(order.total)} - $date"
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background)
+                    .padding(16.dp)
+            ) {
+                val pullToRefreshState = rememberPullToRefreshState()
+                PullToRefreshBox(
+                    isRefreshing = state.isLoading,
+                    onRefresh = { refreshTick += 1 },
+                    state = pullToRefreshState,
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    Column {
+                        Text("Orders", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                        Text(
+                            "Track your order progress in real time",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            items(state.orders, key = { it.id }) { order ->
+                                val shortId = if (order.id.length > 8) order.id.takeLast(8) else order.id
+                                val date = order.createdAt.take(10)
+                                val itemCount = order.items.sumOf { it.quantity }
+                                val progressIndex = orderProgressIndex(order.status)
+                                val statusLabel = prettyOrderStatus(order.status)
+                                val statusColor = when {
+                                    order.status.equals("cancelled", ignoreCase = true) ->
+                                        MaterialTheme.colorScheme.error
+                                    order.status.equals("delivered", ignoreCase = true) ->
+                                        MaterialTheme.colorScheme.primary
+                                    else -> MaterialTheme.colorScheme.tertiary
+                                }
+                                AppCard(modifier = Modifier.fillMaxWidth()) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(12.dp),
+                                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                "Order #$shortId",
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Text(
+                                                statusLabel,
+                                                color = statusColor,
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
+
+                                        Text(
+                                            "$itemCount item(s) - KSh ${"%.2f".format(order.total)} - $date",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+
+                                        val steps = listOf("Placed", "Processing", "Shipped", "Delivered")
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            steps.forEachIndexed { index, step ->
+                                                Column(
+                                                    modifier = Modifier.weight(1f),
+                                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                                ) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(10.dp)
+                                                            .clip(CircleShape)
+                                                            .background(
+                                                                when {
+                                                                    progressIndex >= index ->
+                                                                        MaterialTheme.colorScheme.primary
+                                                                    order.status.equals("cancelled", ignoreCase = true) ->
+                                                                        MaterialTheme.colorScheme.error.copy(alpha = 0.45f)
+                                                                    else ->
+                                                                        MaterialTheme.colorScheme.surfaceVariant
+                                                                }
+                                                            )
+                                                    )
+                                                    Text(
+                                                        step,
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = if (progressIndex >= index) {
+                                                            MaterialTheme.colorScheme.primary
+                                                        } else {
+                                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            SimpleListPage(
-                title = "Orders",
-                subtitle = "Recent order activity",
-                rows = rows
-            )
         }
     }
 }
@@ -972,35 +1093,56 @@ fun AboutScreen() = SimpleListPage(
     rows = listOf("Cartify Android app", "Version 1.0", "Built with Jetpack Compose")
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SimpleListPage(
     title: String,
     subtitle: String,
-    rows: List<String>
+    rows: List<String>,
+    refreshing: Boolean = false,
+    onRefresh: (() -> Unit)? = null
 ) {
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .padding(16.dp)
     ) {
-        Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        LazyColumn(
-            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            items(rows) { row ->
-                AppCard(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(row, modifier = Modifier.weight(1f))
-                        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        val content: @Composable () -> Unit = {
+            Column {
+                Text(title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(rows) { row ->
+                        AppCard(modifier = Modifier.fillMaxWidth()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(14.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(row, modifier = Modifier.weight(1f))
+                                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            }
+                        }
                     }
                 }
             }
+        }
+
+        if (onRefresh != null) {
+            val pullToRefreshState = rememberPullToRefreshState()
+            PullToRefreshBox(
+                isRefreshing = refreshing,
+                onRefresh = onRefresh,
+                state = pullToRefreshState,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                content()
+            }
+        } else {
+            content()
         }
     }
 }
@@ -1010,6 +1152,30 @@ private data class OrdersUiState(
     val error: String? = null,
     val orders: List<BackendOrder> = emptyList()
 )
+
+private fun orderProgressIndex(status: String): Int {
+    return when (status.trim().lowercase(Locale.getDefault())) {
+        "placed", "pending", "new" -> 0
+        "processing", "paid", "confirmed" -> 1
+        "shipped", "in_transit", "in transit", "dispatch", "dispatched" -> 2
+        "delivered", "completed" -> 3
+        "cancelled", "canceled", "failed" -> -1
+        else -> 0
+    }
+}
+
+private fun prettyOrderStatus(status: String): String {
+    val normalized = status.trim().ifBlank { "pending" }
+    return normalized
+        .replace("_", " ")
+        .split(" ")
+        .filter { it.isNotBlank() }
+        .joinToString(" ") { token ->
+            token.lowercase(Locale.getDefault()).replaceFirstChar { ch ->
+                if (ch.isLowerCase()) ch.titlecase(Locale.getDefault()) else ch.toString()
+            }
+        }
+}
 
 private data class WishlistUiState(
     val isLoading: Boolean = false,

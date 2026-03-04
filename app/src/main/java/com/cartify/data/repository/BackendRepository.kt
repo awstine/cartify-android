@@ -23,6 +23,25 @@ import com.cartify.data.remote.backend.WishlistResponse
  * This is intentionally decoupled from existing fake-store repositories to avoid breaking the app.
  */
 class BackendRepository {
+    companion object {
+        private const val CACHE_TTL_MS = 60_000L
+        private val wishlistCache = mutableMapOf<String, CacheEntry<WishlistResponse>>()
+        private val ordersCache = mutableMapOf<String, CacheEntry<List<BackendOrder>>>()
+        private val profileCache = mutableMapOf<String, CacheEntry<UserProfileResponse>>()
+        private val cartCache = mutableMapOf<String, CacheEntry<CartResponse>>()
+    }
+
+    private data class CacheEntry<T>(
+        val value: T,
+        val timestampMs: Long
+    )
+
+    private fun nowMs(): Long = System.currentTimeMillis()
+
+    private fun <T> readCache(entry: CacheEntry<T>?): T? {
+        if (entry == null) return null
+        return if (nowMs() - entry.timestampMs <= CACHE_TTL_MS) entry.value else null
+    }
 
     suspend fun signUp(name: String, email: String, password: String): AuthResponse {
         return BackendRetrofitInstance.api.signUp(SignUpRequest(name, email, password))
@@ -37,26 +56,39 @@ class BackendRepository {
     }
 
     suspend fun getCart(token: String): CartResponse {
-        return BackendRetrofitInstance.api.getCart(bearer(token))
+        readCache(cartCache[token])?.let { return it }
+        val response = BackendRetrofitInstance.api.getCart(bearer(token))
+        cartCache[token] = CacheEntry(response, nowMs())
+        return response
     }
 
     suspend fun addToCart(token: String, productId: String, quantity: Int = 1) {
         BackendRetrofitInstance.api.addToCart(bearer(token), AddCartItemRequest(productId, quantity))
+        cartCache.remove(token)
     }
 
     suspend fun checkout(token: String): CheckoutResponse {
-        return BackendRetrofitInstance.api.checkout(bearer(token))
+        val response = BackendRetrofitInstance.api.checkout(bearer(token))
+        cartCache.remove(token)
+        ordersCache.remove(token)
+        return response
     }
 
     suspend fun checkoutFromClient(token: String, items: List<ClientCheckoutItem>): CheckoutResponse {
-        return BackendRetrofitInstance.api.checkoutFromClient(
+        val response = BackendRetrofitInstance.api.checkoutFromClient(
             bearer(token),
             ClientCheckoutRequest(items = items)
         )
+        cartCache.remove(token)
+        ordersCache.remove(token)
+        return response
     }
 
     suspend fun getProfile(token: String): UserProfileResponse {
-        return BackendRetrofitInstance.api.getProfile(bearer(token))
+        readCache(profileCache[token])?.let { return it }
+        val response = BackendRetrofitInstance.api.getProfile(bearer(token))
+        profileCache[token] = CacheEntry(response, nowMs())
+        return response
     }
 
     suspend fun updateProfile(
@@ -76,27 +108,61 @@ class BackendRepository {
                 darkModeEnabled = darkModeEnabled
             )
         )
-        return BackendRetrofitInstance.api.updateProfile(bearer(token), request)
+        val response = BackendRetrofitInstance.api.updateProfile(bearer(token), request)
+        profileCache[token] = CacheEntry(response, nowMs())
+        return response
     }
 
     suspend fun deleteAccount(token: String): DeleteAccountResponse {
-        return BackendRetrofitInstance.api.deleteAccount(bearer(token))
+        val response = BackendRetrofitInstance.api.deleteAccount(bearer(token))
+        wishlistCache.remove(token)
+        ordersCache.remove(token)
+        profileCache.remove(token)
+        cartCache.remove(token)
+        return response
     }
 
     suspend fun getOrders(token: String): List<BackendOrder> {
-        return BackendRetrofitInstance.api.getOrders(bearer(token))
+        readCache(ordersCache[token])?.let { return it }
+        val response = BackendRetrofitInstance.api.getOrders(bearer(token))
+        ordersCache[token] = CacheEntry(response, nowMs())
+        return response
     }
 
     suspend fun getWishlist(token: String): WishlistResponse {
-        return BackendRetrofitInstance.api.getWishlist(bearer(token))
+        readCache(wishlistCache[token])?.let { return it }
+        val response = BackendRetrofitInstance.api.getWishlist(bearer(token))
+        wishlistCache[token] = CacheEntry(response, nowMs())
+        return response
     }
 
     suspend fun addToWishlist(token: String, productId: String) {
         BackendRetrofitInstance.api.addToWishlist(bearer(token), AddWishlistItemRequest(productId))
+        wishlistCache.remove(token)
     }
 
     suspend fun removeWishlistItem(token: String, productId: String) {
         BackendRetrofitInstance.api.removeWishlistItem(bearer(token), productId)
+        wishlistCache.remove(token)
+    }
+
+    suspend fun prefetchForRoute(token: String, route: String) {
+        when (route) {
+            "wishlist" -> {
+                runCatching { getWishlist(token) }
+            }
+            "cart" -> {
+                runCatching { getCart(token) }
+            }
+            "orders" -> {
+                runCatching { getOrders(token) }
+            }
+            "profile" -> {
+                runCatching { getProfile(token) }
+                runCatching { getWishlist(token) }
+                runCatching { getOrders(token) }
+            }
+        }
     }
 
     private fun bearer(token: String): String = "Bearer $token"

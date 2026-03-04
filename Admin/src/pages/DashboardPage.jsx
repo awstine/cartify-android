@@ -129,6 +129,35 @@ export const DashboardPage = () => {
           )}
         </Card>
       </div>
+
+      <div className="mt-6">
+        <Card>
+          <h3 className="text-base font-semibold">Low Stock Alerts</h3>
+          <p className="mt-1 text-sm text-slate-500">Products with stock at or below 5 units.</p>
+          {(metrics.lowStockProducts || []).length === 0 ? (
+            <EmptyState title="No low-stock products" description="Inventory levels look healthy." />
+          ) : (
+            <div className="mt-4">
+              <Table
+                columns={[
+                  { key: "title", label: "Product" },
+                  { key: "category", label: "Category" },
+                  { key: "stockQty", label: "Stock Qty" },
+                ]}
+                rows={metrics.lowStockProducts || []}
+                rowKey={(item) => item._id}
+                renderRow={(item) => (
+                  <>
+                    <Td className="font-medium">{item.title}</Td>
+                    <Td>{item.category}</Td>
+                    <Td>{item.stockQty}</Td>
+                  </>
+                )}
+              />
+            </div>
+          )}
+        </Card>
+      </div>
     </div>
   );
 };

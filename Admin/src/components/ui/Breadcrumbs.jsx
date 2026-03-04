@@ -7,6 +7,8 @@ const labels = {
   orders: "Orders",
   users: "Customers",
   sales: "Sales",
+  coupons: "Coupons",
+  "audit-logs": "Audit Logs",
   profile: "Profile",
 };
 

@@ -16,6 +16,8 @@ const navItems = [
   { to: "/orders", label: "Orders", icon: "orders" },
   { to: "/users", label: "Customers", icon: "customers" },
   { to: "/sales", label: "Sales", icon: "sales" },
+  { to: "/coupons", label: "Coupons", icon: "categories" },
+  { to: "/audit-logs", label: "Audit Logs", icon: "orders" },
 ];
 
 const NavIcon = ({ type }) => {

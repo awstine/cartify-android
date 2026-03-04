@@ -2,7 +2,9 @@ import { Router } from "express";
 import { body, validationResult } from "express-validator";
 import mongoose from "mongoose";
 import { requireAuth } from "../middleware/auth.js";
+import { Coupon } from "../models/Coupon.js";
 import { Order } from "../models/Order.js";
+import { Product } from "../models/Product.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -28,10 +30,22 @@ router.post(
   "/checkout",
   [
     body("items").isArray({ min: 1 }),
+    body("items.*.productId").optional().isString(),
+    body("items.*.variantSku").optional().isString(),
     body("items.*.title").isString().trim().notEmpty(),
     body("items.*.imageUrl").optional().isString(),
     body("items.*.price").isFloat({ min: 0 }),
     body("items.*.quantity").isInt({ min: 1 }),
+    body("couponCode").optional().isString(),
+    body("shippingAddress").optional().isObject(),
+    body("shippingAddress.fullName").optional().isString(),
+    body("shippingAddress.phone").optional().isString(),
+    body("shippingAddress.line1").optional().isString(),
+    body("shippingAddress.line2").optional().isString(),
+    body("shippingAddress.city").optional().isString(),
+    body("shippingAddress.state").optional().isString(),
+    body("shippingAddress.postalCode").optional().isString(),
+    body("shippingAddress.country").optional().isString(),
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -39,22 +53,115 @@ router.post(
       return res.status(400).json({ message: "Validation failed", errors: errors.array() });
     }
 
-    const items = req.body.items.map((item) => {
-      const price = Number(item.price);
-      const quantity = Number(item.quantity);
-      return {
-        title: item.title,
-        imageUrl: item.imageUrl || "",
-        price,
+    const stockErrors = [];
+    const items = [];
+    const stockAdjustments = [];
+    const couponCode = String(req.body.couponCode || "").trim().toUpperCase();
+
+    for (const rawItem of req.body.items) {
+      const quantity = Number(rawItem.quantity);
+      const fallbackPrice = Number(rawItem.price);
+      const variantSku = String(rawItem.variantSku || "").trim();
+      let resolvedProduct = null;
+
+      if (rawItem.productId && mongoose.Types.ObjectId.isValid(rawItem.productId)) {
+        resolvedProduct = await Product.findById(rawItem.productId);
+      }
+      if (!resolvedProduct && rawItem.title) {
+        resolvedProduct = await Product.findOne({ title: String(rawItem.title).trim() });
+      }
+      if (!resolvedProduct) {
+        stockErrors.push(`Product not found: ${rawItem.title}`);
+        continue;
+      }
+
+      let resolvedPrice = Number(resolvedProduct.price || 0);
+      let remainingStock = Number(resolvedProduct.stockQty || 0);
+
+      if (variantSku) {
+        const variant = (resolvedProduct.variants || []).find((entry) => entry.sku === variantSku);
+        if (!variant) {
+          stockErrors.push(`Variant not found for ${resolvedProduct.title}`);
+          continue;
+        }
+        resolvedPrice = Number(variant.price || resolvedProduct.price || fallbackPrice || 0);
+        remainingStock = Number(variant.stockQty || 0);
+      }
+
+      if (remainingStock < quantity) {
+        stockErrors.push(`Insufficient stock for ${resolvedProduct.title}. Available: ${remainingStock}`);
+        continue;
+      }
+
+      items.push({
+        productId: resolvedProduct._id,
+        variantSku: variantSku || "",
+        title: resolvedProduct.title,
+        imageUrl: resolvedProduct.imageUrl || rawItem.imageUrl || "",
+        price: resolvedPrice > 0 ? resolvedPrice : fallbackPrice,
         quantity,
-        lineTotal: price * quantity,
-      };
-    });
+        lineTotal: (resolvedPrice > 0 ? resolvedPrice : fallbackPrice) * quantity,
+      });
+
+      stockAdjustments.push({
+        productId: resolvedProduct._id,
+        variantSku: variantSku || "",
+        quantity,
+      });
+    }
+
+    if (stockErrors.length > 0) {
+      return res.status(409).json({ message: "Stock check failed", errors: stockErrors });
+    }
 
     const subtotal = items.reduce((acc, item) => acc + item.lineTotal, 0);
     const shipping = subtotal > 0 ? 6.99 : 0;
     const tax = subtotal * 0.08;
-    const total = subtotal + shipping + tax;
+    let discount = 0;
+    let coupon = null;
+
+    if (couponCode) {
+      coupon = await Coupon.findOne({ code: couponCode });
+      if (!coupon || !coupon.isActive) {
+        return res.status(400).json({ message: "Invalid coupon code" });
+      }
+      const now = new Date();
+      if (coupon.startsAt && now < coupon.startsAt) return res.status(400).json({ message: "Coupon not started" });
+      if (coupon.endsAt && now > coupon.endsAt) return res.status(400).json({ message: "Coupon expired" });
+      if (coupon.maxUses && coupon.usesCount >= coupon.maxUses) {
+        return res.status(400).json({ message: "Coupon usage limit reached" });
+      }
+      if (subtotal < Number(coupon.minOrderValue || 0)) {
+        return res.status(400).json({ message: "Order value is below coupon minimum" });
+      }
+
+      discount =
+        coupon.discountType === "percent"
+          ? Math.min(subtotal, subtotal * (Number(coupon.discountValue || 0) / 100))
+          : Math.min(subtotal, Number(coupon.discountValue || 0));
+    }
+
+    const total = Math.max(0, subtotal + shipping + tax - discount);
+
+    for (const adjust of stockAdjustments) {
+      const product = await Product.findById(adjust.productId);
+      if (!product) continue;
+      if (adjust.variantSku) {
+        const idx = (product.variants || []).findIndex((variant) => variant.sku === adjust.variantSku);
+        if (idx >= 0) {
+          const existing = Number(product.variants[idx].stockQty || 0);
+          product.variants[idx].stockQty = Math.max(0, existing - adjust.quantity);
+        }
+      } else {
+        product.stockQty = Math.max(0, Number(product.stockQty || 0) - adjust.quantity);
+      }
+      await product.save();
+    }
+
+    if (coupon) {
+      coupon.usesCount = Number(coupon.usesCount || 0) + 1;
+      await coupon.save();
+    }
 
     const order = await Order.create({
       userId: req.user.id,
@@ -62,13 +169,21 @@ router.post(
       subtotal,
       shipping,
       tax,
+      discount,
       total,
+      couponCode: couponCode || "",
+      shippingAddress: req.body.shippingAddress || {},
+      shippingDetails: {
+        courier: "",
+        trackingNumber: "",
+        timeline: [{ label: "Order placed", note: "Order created successfully", at: new Date() }],
+      },
     });
 
     return res.status(201).json({
       message: "Checkout complete",
       orderId: String(order._id),
-      summary: { subtotal, shipping, tax, total },
+      summary: { subtotal, shipping, tax, discount, total },
     });
   }
 );

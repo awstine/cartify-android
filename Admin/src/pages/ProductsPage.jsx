@@ -94,6 +94,17 @@ export const ProductsPage = () => {
 
   const handleModalSubmit = async (values) => {
     setSubmitting(true);
+    let variants = [];
+    if (values.variantsJson && String(values.variantsJson).trim()) {
+      try {
+        const parsed = JSON.parse(values.variantsJson);
+        if (Array.isArray(parsed)) variants = parsed;
+      } catch (_err) {
+        showToast({ type: "error", title: "Variants JSON is invalid" });
+        setSubmitting(false);
+        return;
+      }
+    }
     const payload = {
       title: values.title,
       price: Number(values.price),
@@ -105,6 +116,7 @@ export const ProductsPage = () => {
       description: values.description || "",
       imageUrl: values.imageUrl || "",
       images: Array.isArray(values.images) ? values.images.slice(0, 4) : values.imageUrl ? [values.imageUrl] : [],
+      variants,
     };
     try {
       if (editingProduct?._id) {
@@ -237,6 +249,8 @@ export const ProductsPage = () => {
               { key: "title", label: "Product" },
               { key: "category", label: "Category" },
               { key: "price", label: "Price" },
+              { key: "cost", label: "Cost" },
+              { key: "stockQty", label: "Stock Qty" },
               { key: "status", label: "Status" },
               { key: "actions", label: "Actions", className: "text-right" },
             ]}
@@ -265,6 +279,8 @@ export const ProductsPage = () => {
                 </Td>
                 <Td>{product.category}</Td>
                 <Td>KSh {Number(product.price || 0).toFixed(2)}</Td>
+                <Td>KSh {Number(product.costPrice || 0).toFixed(2)}</Td>
+                <Td>{Number(product.stockQty || 0)}</Td>
                 <Td>
                   <Badge tone="success">Active</Badge>
                 </Td>

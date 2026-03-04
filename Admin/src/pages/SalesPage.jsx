@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { Button } from "../components/ui/Button";
+import { Input } from "../components/ui/Field";
 import { PageHeader } from "../components/ui/PageHeader";
 import { EmptyState, ErrorState, LoadingState } from "../components/ui/States";
 import { Card } from "../components/ui/Surface";
@@ -12,12 +13,19 @@ export const SalesPage = () => {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
 
   const loadReport = async () => {
     setLoading(true);
     setError("");
     try {
-      const response = await api.get("/admin/sales");
+      const response = await api.get("/admin/sales", {
+        params: {
+          from: from || undefined,
+          to: to || undefined,
+        },
+      });
       setReport(response.data);
     } catch (err) {
       setError(err?.response?.data?.message || "Failed to load sales report");
@@ -28,7 +36,7 @@ export const SalesPage = () => {
 
   useEffect(() => {
     loadReport();
-  }, []);
+  }, [from, to]);
 
   if (error) return <ErrorState message={error} action={<Button onClick={loadReport}>Retry</Button>} />;
   if (loading) return <LoadingState label="Loading sales report..." />;
@@ -37,6 +45,37 @@ export const SalesPage = () => {
   return (
     <div>
       <PageHeader title="Sales" description="Revenue trends, order volume, and top-performing products." />
+      <div className="mb-4 flex flex-wrap items-end gap-2 rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950">
+        <div>
+          <p className="mb-1 text-xs text-slate-500">From</p>
+          <Input type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
+        </div>
+        <div>
+          <p className="mb-1 text-xs text-slate-500">To</p>
+          <Input type="date" value={to} onChange={(event) => setTo(event.target.value)} />
+        </div>
+        <Button
+          variant="secondary"
+          onClick={() => {
+            setFrom("");
+            setTo("");
+          }}
+        >
+          Clear
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() => downloadReport("csv")}
+        >
+          Export CSV
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() => downloadReport("pdf")}
+        >
+          Export PDF
+        </Button>
+      </div>
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>
           <p className="text-xs uppercase text-slate-500">Gross Sales</p>
@@ -78,3 +117,17 @@ export const SalesPage = () => {
     </div>
   );
 };
+  const downloadReport = async (type) => {
+    const response = await api.get(`/admin/sales/export.${type}`, {
+      params: { from: from || undefined, to: to || undefined },
+      responseType: "blob",
+    });
+    const blobUrl = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement("a");
+    link.href = blobUrl;
+    link.download = `sales-report.${type}`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(blobUrl);
+  };

@@ -10,8 +10,13 @@ import { Wishlist } from "../models/Wishlist.js";
 const router = Router();
 
 const resolveRoleForEmail = (email, currentRole = "customer") => {
-  if (currentRole === "admin") return "admin";
-  return env.adminEmails.includes(String(email || "").trim().toLowerCase()) ? "admin" : "customer";
+  const normalized = String(email || "").trim().toLowerCase();
+  if (env.superAdminEmails.includes(normalized)) return "super_admin";
+  if (env.adminEmails.includes(normalized)) return "admin";
+  if (env.managerEmails.includes(normalized)) return "manager";
+  if (env.supportEmails.includes(normalized)) return "support";
+  if (["super_admin", "admin", "manager", "support"].includes(currentRole)) return currentRole;
+  return "customer";
 };
 
 const issueToken = (user) =>

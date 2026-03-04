@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -73,6 +74,8 @@ import com.cartify.ui.screens.product.ProductScreen
 import com.cartify.ui.screens.product.ProductViewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -98,6 +101,11 @@ fun AppNavHost(
     val scope = rememberCoroutineScope()
     val backendRepository = remember { BackendRepository() }
     var wishlistProductIds by remember { mutableStateOf(setOf<String>()) }
+    var prefetchingRoute by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) {
+        productViewModel.retryLoad()
+    }
 
     LaunchedEffect(isLoggedIn, session.token) {
         val token = session.token?.trim().orEmpty()
@@ -106,10 +114,46 @@ fun AppNavHost(
             return@LaunchedEffect
         }
 
-        runCatching { backendRepository.getWishlist(token) }
-            .onSuccess { wishlist ->
+        runCatching {
+            coroutineScope {
+                val wishlistDeferred = async { backendRepository.getWishlist(token) }
+                val ordersDeferred = async { backendRepository.getOrders(token) }
+                val profileDeferred = async { backendRepository.getProfile(token) }
+                val cartDeferred = async { backendRepository.getCart(token) }
+
+                val wishlist = wishlistDeferred.await()
                 wishlistProductIds = wishlist.items.map { it.productId }.toSet()
+
+                runCatching { ordersDeferred.await() }
+                runCatching { profileDeferred.await() }
+                runCatching { cartDeferred.await() }
             }
+        }
+            .onFailure {
+                runCatching { backendRepository.getWishlist(token) }
+                    .onSuccess { wishlist ->
+                        wishlistProductIds = wishlist.items.map { it.productId }.toSet()
+                    }
+            }
+    }
+
+    fun navigateWithPrefetch(route: String) {
+        if (route == currentRoute || prefetchingRoute != null) return
+        scope.launch {
+            val token = session.token?.trim().orEmpty()
+            val requiresPrefetch = route == NavigationItem.Wishlist.route ||
+                route == NavigationItem.Cart.route ||
+                route == NavigationItem.Orders.route ||
+                route == NavigationItem.Profile.route
+
+            if (isLoggedIn && token.isNotBlank() && requiresPrefetch) {
+                prefetchingRoute = route
+                runCatching { backendRepository.prefetchForRoute(token, route) }
+            }
+
+            navController.navigate(route) { launchSingleTop = true }
+            prefetchingRoute = null
+        }
     }
 
     val mainRoutes = setOf(
@@ -140,8 +184,12 @@ fun AppNavHost(
                 val productId = action.payload?.productId
                 val product = productId?.let { productViewModel.productById(it) }
                 if (product != null) {
-                    productViewModel.addToCart(product)
-                    snackbarHostState.showSnackbar("Added to cart")
+                    if (product.stock > 0) {
+                        productViewModel.addToCart(product)
+                        snackbarHostState.showSnackbar("Added to cart")
+                    } else {
+                        snackbarHostState.showSnackbar("Out of stock")
+                    }
                 }
                 navController.navigate(action.returnRoute) { launchSingleTop = true }
             }
@@ -160,11 +208,11 @@ fun AppNavHost(
                 }
                 navController.navigate(action.returnRoute) { launchSingleTop = true }
             }
-            "OPEN_CART" -> navController.navigate(NavigationItem.Cart.route) { launchSingleTop = true }
+            "OPEN_CART" -> navigateWithPrefetch(NavigationItem.Cart.route)
             "OPEN_CHECKOUT" -> navController.navigate("${NavigationItem.Checkout.route}?subtotal=0.0&shipping=0.0&tax=0.0&discount=0.0&total=0.0") { launchSingleTop = true }
-            "OPEN_WISHLIST" -> navController.navigate(NavigationItem.Wishlist.route) { launchSingleTop = true }
-            "OPEN_PROFILE" -> navController.navigate(NavigationItem.Profile.route) { launchSingleTop = true }
-            "OPEN_ORDERS" -> navController.navigate(NavigationItem.Orders.route) { launchSingleTop = true }
+            "OPEN_WISHLIST" -> navigateWithPrefetch(NavigationItem.Wishlist.route)
+            "OPEN_PROFILE" -> navigateWithPrefetch(NavigationItem.Profile.route)
+            "OPEN_ORDERS" -> navigateWithPrefetch(NavigationItem.Orders.route)
         }
         authViewModel.clearPendingAction()
     }
@@ -191,7 +239,7 @@ fun AppNavHost(
                     actions = {
                         IconButton(onClick = {
                             if (isLoggedIn) {
-                                navController.navigate(NavigationItem.Profile.route) { launchSingleTop = true }
+                                navigateWithPrefetch(NavigationItem.Profile.route)
                             } else {
                                 navController.navigate(NavigationItem.Login.route) { launchSingleTop = true }
                             }
@@ -236,7 +284,7 @@ fun AppNavHost(
                         }
                         IconButton(onClick = {
                             if (currentRoute != NavigationItem.Cart.route) {
-                                navController.navigate(NavigationItem.Cart.route) { launchSingleTop = true }
+                                navigateWithPrefetch(NavigationItem.Cart.route)
                             }
                         }, modifier = Modifier
                             .padding(end = 10.dp)
@@ -270,15 +318,20 @@ fun AppNavHost(
         },
         bottomBar = {
             if (showMainShell) {
-                BottomNavigationBar(navController, cartItemCount)
+                BottomNavigationBar(
+                    navController = navController,
+                    cartItemCount = cartItemCount,
+                    onRouteSelected = { route -> navigateWithPrefetch(route) }
+                )
             }
         }
     ) { innerPadding ->
-        NavHost(
-            navController = navController,
-            startDestination = NavigationItem.Products.route,
-            modifier = Modifier.padding(innerPadding)
-        ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            NavHost(
+                navController = navController,
+                startDestination = NavigationItem.Products.route,
+                modifier = Modifier.padding(innerPadding)
+            ) {
             composable(NavigationItem.Login.route) {
                 LoginScreen(
                     viewModel = authViewModel,
@@ -323,15 +376,19 @@ fun AppNavHost(
                 ProductScreen(
                     viewModel = productViewModel,
                     onProductClick = { productId -> navController.navigate("product_details/$productId") },
-                    onCartClick = { navController.navigate(NavigationItem.Cart.route) { launchSingleTop = true } },
+                    onCartClick = { navigateWithPrefetch(NavigationItem.Cart.route) },
                     onAddToCartAttempt = { product ->
                         authViewModel.requireAuth(
                             actionName = "ADD_TO_CART",
                             returnRoute = "product_details/${product.id}",
                             payload = PendingActionPayload(productId = product.id, quantity = 1)
                         ) {
-                            productViewModel.addToCart(product)
-                            scope.launch { snackbarHostState.showSnackbar("Added to cart") }
+                            if (product.stock > 0) {
+                                productViewModel.addToCart(product)
+                                scope.launch { snackbarHostState.showSnackbar("Added to cart") }
+                            } else {
+                                scope.launch { snackbarHostState.showSnackbar("Out of stock") }
+                            }
                         }
                     },
                     onSignInRequested = { navController.navigate(NavigationItem.Login.route) { launchSingleTop = true } },
@@ -450,9 +507,7 @@ fun AppNavHost(
                             scope.launch { snackbarHostState.showSnackbar("Account deleted") }
                         },
                         onOpenOrders = {
-                            navController.navigate(NavigationItem.Orders.route) {
-                                launchSingleTop = true
-                            }
+                            navigateWithPrefetch(NavigationItem.Orders.route)
                         },
                         onLogout = {
                             authViewModel.signOut()
@@ -671,33 +726,46 @@ fun AppNavHost(
                     },
                     onBack = { navController.popBackStack() },
                     onAddToCart = { product ->
-                        val allowed = authViewModel.requireAuth(
-                            actionName = "ADD_TO_CART",
-                            returnRoute = "product_details/${product.id}",
-                            payload = PendingActionPayload(productId = product.id, quantity = 1)
-                        ) {
-                            productViewModel.addToCart(product)
-                            scope.launch { snackbarHostState.showSnackbar("Added to cart") }
+                        if (product.stock <= 0) {
+                            scope.launch { snackbarHostState.showSnackbar("Out of stock") }
+                        } else {
+                            val allowed = authViewModel.requireAuth(
+                                actionName = "ADD_TO_CART",
+                                returnRoute = "product_details/${product.id}",
+                                payload = PendingActionPayload(productId = product.id, quantity = 1)
+                            ) {
+                                productViewModel.addToCart(product)
+                                scope.launch { snackbarHostState.showSnackbar("Added to cart") }
+                            }
+                            if (!allowed) navController.navigate(NavigationItem.Login.route) { launchSingleTop = true }
                         }
-                        if (!allowed) navController.navigate(NavigationItem.Login.route) { launchSingleTop = true }
                     },
                     onOrderNow = { product ->
-                        val allowed = authViewModel.requireAuth(
-                            actionName = "OPEN_CHECKOUT",
-                            returnRoute = "product_details/${product.id}"
-                        ) {
-                            val subtotal = product.price
-                            val shipping = if (subtotal > 0) 6.99 else 0.0
-                            val tax = subtotal * 0.08
-                            val discount = 0.0
-                            val total = subtotal + shipping + tax - discount
-                            navController.navigate(
-                                "${NavigationItem.Checkout.route}?subtotal=$subtotal&shipping=$shipping&tax=$tax&discount=$discount&total=$total"
+                        if (product.stock <= 0) {
+                            scope.launch { snackbarHostState.showSnackbar("Out of stock") }
+                        } else {
+                            val allowed = authViewModel.requireAuth(
+                                actionName = "OPEN_CHECKOUT",
+                                returnRoute = "product_details/${product.id}"
                             ) {
-                                launchSingleTop = true
+                                productViewModel.addToCart(product)
+                                val subtotal = product.price
+                                val shipping = if (subtotal > 0) 6.99 else 0.0
+                                val tax = subtotal * 0.08
+                                val discount = 0.0
+                                val total = subtotal + shipping + tax - discount
+                                navController.navigate(
+                                    "${NavigationItem.Checkout.route}?subtotal=$subtotal&shipping=$shipping&tax=$tax&discount=$discount&total=$total"
+                                ) {
+                                    launchSingleTop = true
+                                }
                             }
+                            if (!allowed) navController.navigate(NavigationItem.Login.route) { launchSingleTop = true }
                         }
-                        if (!allowed) navController.navigate(NavigationItem.Login.route) { launchSingleTop = true }
+                    },
+                    onSubmitReview = { product, stars ->
+                        productViewModel.submitReview(product.id, stars)
+                        scope.launch { snackbarHostState.showSnackbar("Review submitted") }
                     },
                     onRelatedProductClick = { relatedId ->
                         navController.navigate("product_details/$relatedId") {
@@ -705,6 +773,19 @@ fun AppNavHost(
                         }
                     }
                 )
+            }
+
+            }
+
+            if (!prefetchingRoute.isNullOrBlank()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background.copy(alpha = 0.35f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
             }
         }
     }

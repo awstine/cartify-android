@@ -30,6 +30,7 @@ const schema = z.object({
     .array(z.string())
     .max(4, "A product can have up to 4 images")
     .optional(),
+  variantsJson: z.string().optional(),
 });
 
 export const ProductModal = ({ isOpen, onClose, onSubmit, initialValues, loading, categories = [] }) => {
@@ -53,6 +54,7 @@ export const ProductModal = ({ isOpen, onClose, onSubmit, initialValues, loading
       description: "",
       imageUrl: "",
       images: [],
+      variantsJson: "[]",
     },
   });
 
@@ -76,6 +78,7 @@ export const ProductModal = ({ isOpen, onClose, onSubmit, initialValues, loading
         : initialValues?.imageUrl
           ? [initialValues.imageUrl]
           : [],
+      variantsJson: JSON.stringify(Array.isArray(initialValues?.variants) ? initialValues.variants : [], null, 2),
     });
   }, [initialValues, reset, isOpen]);
 
@@ -173,6 +176,15 @@ export const ProductModal = ({ isOpen, onClose, onSubmit, initialValues, loading
         <div className="md:col-span-2">
           <Field label="Description" htmlFor="description" error={errors.description?.message}>
             <Textarea id="description" rows={5} {...register("description")} />
+          </Field>
+        </div>
+        <div className="md:col-span-2">
+          <Field
+            label="Variants JSON"
+            htmlFor="variantsJson"
+            helperText='Optional. Example: [{"sku":"TS-BLK-L","size":"L","color":"Black","price":1200,"stockQty":5}]'
+          >
+            <Textarea id="variantsJson" rows={5} {...register("variantsJson")} />
           </Field>
         </div>
         {imagesValue.length > 0 || imageUrlValue ? (

@@ -66,14 +66,27 @@ fun AppPrimaryButton(
     val pressed = interaction.collectIsPressedAsState().value
     val scale = animateFloatAsState(if (pressed) 0.98f else 1f, label = "buttonScale")
 
+    val backgroundBrush = if (enabled) {
+        Brush.horizontalGradient(listOf(PrimaryPurple, PrimaryViolet))
+    } else {
+        Brush.horizontalGradient(
+            listOf(
+                MaterialTheme.colorScheme.surfaceVariant,
+                MaterialTheme.colorScheme.surfaceVariant
+            )
+        )
+    }
+    val labelColor = if (enabled) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+
     Box(
         modifier = modifier
             .height(height)
             .scale(scale.value)
             .background(
-                brush = Brush.horizontalGradient(listOf(PrimaryPurple, PrimaryViolet)),
+                brush = backgroundBrush,
                 shape = RoundedCornerShape(AppRadius.lg)
             )
+            .alpha(if (enabled) 1f else 0.65f)
             .clickable(
                 enabled = enabled,
                 interactionSource = interaction,
@@ -82,7 +95,7 @@ fun AppPrimaryButton(
             ),
         contentAlignment = Alignment.Center
     ) {
-        Text(text = text, color = Color.White, fontWeight = FontWeight.SemiBold)
+        Text(text = text, color = labelColor, fontWeight = FontWeight.SemiBold)
     }
 }
 

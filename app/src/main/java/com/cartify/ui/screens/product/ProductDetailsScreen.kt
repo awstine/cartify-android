@@ -58,6 +58,7 @@ fun ProductDetailsScreen(
     onBack: () -> Unit,
     onAddToCart: (Product) -> Unit,
     onOrderNow: (Product) -> Unit,
+    onSubmitReview: (Product, Int) -> Unit,
     onRelatedProductClick: (Int) -> Unit
 ) {
     if (product == null) {
@@ -75,6 +76,8 @@ fun ProductDetailsScreen(
 
     var selectedColor by remember { mutableStateOf(0) }
     var selectedSize by remember { mutableStateOf("M") }
+    var selectedReviewStars by remember { mutableStateOf(5) }
+    val inStock = product.stock > 0
 
     LazyColumn(
         modifier = Modifier
@@ -128,6 +131,12 @@ fun ProductDetailsScreen(
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(product.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                 Text("KSh ${"%.2f".format(product.price)}", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
+                Text(
+                    text = if (inStock) "Stock: ${product.stock}" else "Out of stock",
+                    color = if (inStock) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
 
                 val rating = product.rating?.rate ?: 0.0
                 val ratingCount = product.rating?.count ?: 0
@@ -143,6 +152,26 @@ fun ProductDetailsScreen(
                     }
                     Text("${String.format("%.1f", rating)} ($ratingCount reviews)", color = TextSecondary)
                 }
+                Text("Rate this product", fontWeight = FontWeight.SemiBold)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    repeat(5) { index ->
+                        val star = index + 1
+                        androidx.compose.material3.Icon(
+                            imageVector = if (star <= selectedReviewStars) Icons.Default.Star else Icons.Default.StarBorder,
+                            contentDescription = "Rate $star stars",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .size(22.dp)
+                                .clickable { selectedReviewStars = star }
+                        )
+                    }
+                    Text("$selectedReviewStars/5", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+                }
+                AppPrimaryButton(
+                    text = "Submit review",
+                    onClick = { onSubmitReview(product, selectedReviewStars) },
+                    modifier = Modifier.fillMaxWidth()
+                )
 
                 Text("Color", fontWeight = FontWeight.SemiBold)
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -175,14 +204,16 @@ fun ProductDetailsScreen(
 
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                     AppPrimaryButton(
-                        text = "Add to cart",
+                        text = if (inStock) "Add to cart" else "Out of stock",
                         onClick = { onAddToCart(product) },
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        enabled = inStock
                     )
                     AppPrimaryButton(
                         text = "Order now",
                         onClick = { onOrderNow(product) },
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        enabled = inStock
                     )
                 }
             }
@@ -221,6 +252,11 @@ fun ProductDetailsScreen(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    if (related.stock > 0) "Stock: ${related.stock}" else "Out of stock",
+                                    color = if (related.stock > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                                    style = MaterialTheme.typography.labelSmall
                                 )
                                 Text(
                                     "KSh ${"%.2f".format(related.price)}",

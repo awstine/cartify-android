@@ -22,6 +22,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -57,6 +62,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import java.util.Locale
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProductScreen(
     viewModel: ProductViewModel,
@@ -72,6 +78,7 @@ fun ProductScreen(
     val homeCategories = remember(uiState.products, uiState.isLoading) { viewModel.allCategories() }
     val heroProducts = uiState.products.take(8)
     val heroListState = rememberLazyListState()
+    val pullToRefreshState = rememberPullToRefreshState()
 
     LaunchedEffect(heroProducts.size) {
         if (heroProducts.size <= 1) return@LaunchedEffect
@@ -91,76 +98,83 @@ fun ProductScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        when {
-            uiState.isLoading -> LoadingState()
-            uiState.error != null -> {
-                AppErrorState(
-                    message = uiState.error ?: "Unable to load products",
-                    onRetry = viewModel::retryLoad
-                )
-            }
-            else -> {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
-                    contentPadding = PaddingValues(bottom = 90.dp)
-                ) {
-                    if (uiState.products.isNotEmpty()) {
+        PullToRefreshBox(
+            isRefreshing = uiState.isLoading,
+            onRefresh = { viewModel.retryLoad() },
+            state = pullToRefreshState,
+            modifier = Modifier.fillMaxSize()
+        ) {
+            when {
+                uiState.isLoading -> LoadingState()
+                uiState.error != null -> {
+                    AppErrorState(
+                        message = uiState.error ?: "Unable to load products",
+                        onRetry = viewModel::retryLoad
+                    )
+                }
+                else -> {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                        contentPadding = PaddingValues(bottom = 90.dp)
+                    ) {
+                        if (uiState.products.isNotEmpty()) {
+                            item {
+                                LazyRow(
+                                    state = heroListState,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 6.dp),
+                                    contentPadding = PaddingValues(horizontal = AppSpacing.lg),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    items(heroProducts, key = { it.id }) { hero ->
+                                        HeroProductCard(
+                                            product = hero,
+                                            onProductClick = { onProductClick(hero.id) }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
                         item {
                             LazyRow(
-                                state = heroListState,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(top = 6.dp),
+                                modifier = Modifier.fillMaxWidth(),
                                 contentPadding = PaddingValues(horizontal = AppSpacing.lg),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                items(heroProducts, key = { it.id }) { hero ->
-                                    HeroProductCard(
-                                        product = hero,
-                                        onProductClick = { onProductClick(hero.id) }
+                                items(homeCategories) { category ->
+                                    CategoryPill(
+                                        text = categoryLabel(category),
+                                        selected = uiState.selectedCategory.equals(category, true),
+                                        onClick = { viewModel.onCategorySelected(category) }
                                     )
                                 }
                             }
                         }
-                    }
 
-                    item {
-                        LazyRow(
-                            modifier = Modifier.fillMaxWidth(),
-                            contentPadding = PaddingValues(horizontal = AppSpacing.lg),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            items(homeCategories) { category ->
-                                CategoryPill(
-                                    text = categoryLabel(category),
-                                    selected = uiState.selectedCategory.equals(category, true),
-                                    onClick = { viewModel.onCategorySelected(category) }
-                                )
-                            }
-                        }
-                    }
-
-                    if (uiState.products.isEmpty()) {
-                        item { AppEmptyState("No products", "Try another category or search.") }
-                    } else {
-                        val rows = uiState.products.chunked(2)
-                        items(rows) { rowProducts ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = AppSpacing.lg),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                rowProducts.forEach { product ->
-                                    HomeProductCard(
-                                        product = product,
-                                        onClick = { onProductClick(product.id) },
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                }
-                                if (rowProducts.size == 1) {
-                                    Spacer(modifier = Modifier.weight(1f))
+                        if (uiState.products.isEmpty()) {
+                            item { AppEmptyState("No products", "Try another category or search.") }
+                        } else {
+                            val rows = uiState.products.chunked(2)
+                            items(rows) { rowProducts ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = AppSpacing.lg),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    rowProducts.forEach { product ->
+                                        HomeProductCard(
+                                            product = product,
+                                            onClick = { onProductClick(product.id) },
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+                                    if (rowProducts.size == 1) {
+                                        Spacer(modifier = Modifier.weight(1f))
+                                    }
                                 }
                             }
                         }
@@ -264,9 +278,12 @@ private fun LoadingState() {
 
 @Composable
 private fun HeroProductCard(product: Product, onProductClick: () -> Unit) {
-    SoftCard(
+    Card(
         modifier = Modifier
-            .width(320.dp)
+            .width(320.dp),
+        shape = RoundedCornerShape(1.5.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             ProductImage(
@@ -275,7 +292,7 @@ private fun HeroProductCard(product: Product, onProductClick: () -> Unit) {
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .size(128.dp)
-                    .clip(RoundedCornerShape(AppRadius.md))
+                    .clip(RoundedCornerShape(1.5.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
             )
             Spacer(modifier = Modifier.size(12.dp))
@@ -283,7 +300,14 @@ private fun HeroProductCard(product: Product, onProductClick: () -> Unit) {
                 Text(product.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    product.description,
+                    if (product.stock > 0) "Stock: ${product.stock}" else "Out of stock",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (product.stock > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    previewDescription(product.description, maxWords = 20),
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextSecondary,
                     maxLines = 2,
@@ -326,6 +350,21 @@ private fun HomeProductCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+            Text(
+                if (product.stock > 0) "Stock: ${product.stock}" else "Out of stock",
+                color = if (product.stock > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                previewDescription(product.description, maxWords = 20),
+                color = TextSecondary,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(4.dp))
             val rating = product.rating?.rate ?: 0.0
             val filledStars = rating.toInt().coerceIn(0, 5)
             Row(
@@ -361,4 +400,10 @@ private fun categoryLabel(raw: String): String {
                 if (ch.isLowerCase()) ch.titlecase(Locale.getDefault()) else ch.toString()
             }
         }
+}
+
+private fun previewDescription(text: String, maxWords: Int = 20): String {
+    val words = text.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+    if (words.size <= maxWords) return words.joinToString(" ")
+    return words.take(maxWords).joinToString(" ") + "..."
 }

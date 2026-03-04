@@ -3,6 +3,7 @@ package com.cartify.ui.screens.product
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.cartify.data.model.Product
+import com.cartify.data.model.ProductRating
 import com.cartify.data.repository.CartRepository
 import com.cartify.data.repository.ProductDataState
 import com.cartify.data.repository.ProductRepository
@@ -31,6 +32,7 @@ class ProductViewModel(
     private val query = MutableStateFlow("")
     private val category = MutableStateFlow("All")
     private val sort = MutableStateFlow(ProductSortOption.Popularity)
+    private val localReviews = MutableStateFlow<Map<Int, List<Int>>>(emptyMap())
     val cartItemCount: StateFlow<Int> = cartRepository.cart
         .map { items -> items.sumOf { it.quantity } }
         .stateIn(
@@ -43,8 +45,9 @@ class ProductViewModel(
         productRepository.getProductsState(),
         query,
         category,
-        sort
-    ) { repositoryState, queryText, selectedCategory, selectedSort ->
+        sort,
+        localReviews
+    ) { repositoryState, queryText, selectedCategory, selectedSort, reviews ->
         when (repositoryState) {
             is ProductDataState.Loading -> {
                 ProductUiState(
@@ -65,6 +68,7 @@ class ProductViewModel(
             }
             is ProductDataState.Success -> {
                 val filtered = repositoryState.products
+                    .map { applyLocalReviews(it, reviews[it.id].orEmpty()) }
                     .filter { selectedCategory == "All" || it.category.equals(selectedCategory, true) }
                     .filter {
                         queryText.isBlank() ||
@@ -130,7 +134,9 @@ class ProductViewModel(
     fun productById(productId: Int): Product? {
         val state = productRepository.getProductsState().value
         return if (state is ProductDataState.Success) {
-            state.products.find { it.id == productId }
+            state.products
+                .map { applyLocalReviews(it, localReviews.value[it.id].orEmpty()) }
+                .find { it.id == productId }
         } else {
             null
         }
@@ -139,7 +145,9 @@ class ProductViewModel(
     fun productByBackendId(backendId: String): Product? {
         val state = productRepository.getProductsState().value
         return if (state is ProductDataState.Success) {
-            state.products.find { it.backendId == backendId }
+            state.products
+                .map { applyLocalReviews(it, localReviews.value[it.id].orEmpty()) }
+                .find { it.backendId == backendId }
         } else {
             null
         }
@@ -149,13 +157,14 @@ class ProductViewModel(
         val state = productRepository.getProductsState().value
         if (state !is ProductDataState.Success) return emptyList()
 
-        val sameCategory = state.products
+        val hydrated = state.products.map { applyLocalReviews(it, localReviews.value[it.id].orEmpty()) }
+        val sameCategory = hydrated
             .asSequence()
             .filter { it.id != product.id && it.category.equals(product.category, ignoreCase = true) }
             .toList()
         if (sameCategory.size >= limit) return sameCategory.take(limit)
 
-        val additional = state.products
+        val additional = hydrated
             .asSequence()
             .filter { it.id != product.id && sameCategory.none { existing -> existing.id == it.id } }
             .take(limit - sameCategory.size)
@@ -163,5 +172,28 @@ class ProductViewModel(
         return sameCategory + additional
     }
 
+    fun submitReview(productId: Int, stars: Int) {
+        val normalized = stars.coerceIn(1, 5)
+        val current = localReviews.value[productId].orEmpty()
+        localReviews.value = localReviews.value + (productId to (current + normalized))
+    }
+
     private fun pseudoPopularity(id: Int): Int = (id * 37) % 100
+
+    private fun applyLocalReviews(product: Product, reviews: List<Int>): Product {
+        if (reviews.isEmpty()) return product
+        val baseCount = product.rating?.count ?: 0
+        val baseTotal = (product.rating?.rate ?: 0.0) * baseCount
+        val reviewCount = reviews.size
+        val reviewTotal = reviews.sum()
+        val totalCount = baseCount + reviewCount
+        if (totalCount <= 0) return product
+        val totalRate = (baseTotal + reviewTotal) / totalCount.toDouble()
+        return product.copy(
+            rating = ProductRating(
+                rate = totalRate.coerceIn(0.0, 5.0),
+                count = totalCount
+            )
+        )
+    }
 }
