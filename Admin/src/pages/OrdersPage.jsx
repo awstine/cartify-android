@@ -3,6 +3,7 @@ import { api } from "../api";
 import { Button } from "../components/ui/Button";
 import { Drawer } from "../components/ui/Drawer";
 import { Input, Select } from "../components/ui/Field";
+import { Modal } from "../components/ui/Modal";
 import { PageHeader, Toolbar } from "../components/ui/PageHeader";
 import { Pagination } from "../components/ui/Pagination";
 import { EmptyState, ErrorState, LoadingState } from "../components/ui/States";
@@ -30,6 +31,7 @@ export const OrdersPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
+  const [selectedOrder, setSelectedOrder] = useState(null);
 
   const loadOrders = async () => {
     setLoading(true);
@@ -133,12 +135,21 @@ export const OrdersPage = () => {
               { key: "total", label: "Total" },
               { key: "status", label: "Status" },
               { key: "created", label: "Created" },
+              { key: "details", label: "Details", className: "text-right" },
             ]}
             rows={filteredOrders}
             rowKey={(order) => order._id}
             renderRow={(order) => (
               <>
-                <Td>#{order._id.slice(-8)}</Td>
+                <Td>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedOrder(order)}
+                    className="font-semibold text-primary hover:underline"
+                  >
+                    #{order._id.slice(-8)}
+                  </button>
+                </Td>
                 <Td>{order.userId?.email || "-"}</Td>
                 <Td>KSh {Number(order.total || 0).toFixed(2)}</Td>
                 <Td>
@@ -159,12 +170,107 @@ export const OrdersPage = () => {
                   </div>
                 </Td>
                 <Td>{new Date(order.createdAt).toLocaleString()}</Td>
+                <Td className="text-right">
+                  <Button variant="secondary" className="px-3 py-1.5" onClick={() => setSelectedOrder(order)}>
+                    View
+                  </Button>
+                </Td>
               </>
             )}
           />
           <Pagination page={page} total={total} limit={LIMIT} onPageChange={setPage} />
         </>
       ) : null}
+
+      <Modal
+        isOpen={Boolean(selectedOrder)}
+        onClose={() => setSelectedOrder(null)}
+        title={`Order #${selectedOrder?._id?.slice(-8) || ""} Details`}
+        footer={
+          <Button variant="secondary" onClick={() => setSelectedOrder(null)}>
+            Close
+          </Button>
+        }
+      >
+        {selectedOrder ? (
+          <div className="space-y-5">
+            <div className="grid gap-3 rounded-xl border border-slate-200 p-4 text-sm dark:border-slate-800 md:grid-cols-2">
+              <div>
+                <p className="text-xs text-slate-500">Customer Name</p>
+                <p className="font-medium">{selectedOrder.userId?.name || "N/A"}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500">Customer Email</p>
+                <p className="font-medium">{selectedOrder.userId?.email || "N/A"}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500">Order Date</p>
+                <p className="font-medium">{new Date(selectedOrder.createdAt).toLocaleString()}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500">Status</p>
+                <Badge tone={toneFromStatus(selectedOrder.status)}>{selectedOrder.status}</Badge>
+              </div>
+            </div>
+
+            <div>
+              <h4 className="mb-2 text-sm font-semibold">Ordered Products</h4>
+              <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+                <table className="w-full min-w-[700px] text-left text-sm">
+                  <thead className="bg-slate-50 dark:bg-slate-900/60">
+                    <tr>
+                      <th className="px-3 py-2">Product</th>
+                      <th className="px-3 py-2">Price</th>
+                      <th className="px-3 py-2">Qty</th>
+                      <th className="px-3 py-2">Line Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(selectedOrder.items || []).map((item, index) => (
+                      <tr key={`${item.title}-${index}`} className="border-t border-slate-200 dark:border-slate-800">
+                        <td className="px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            {item.imageUrl ? (
+                              <img
+                                src={item.imageUrl}
+                                alt={item.title}
+                                className="h-10 w-10 rounded-md border border-slate-200 object-cover dark:border-slate-700"
+                              />
+                            ) : null}
+                            <span>{item.title}</span>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2">KSh {Number(item.price || 0).toFixed(2)}</td>
+                        <td className="px-3 py-2">{item.quantity}</td>
+                        <td className="px-3 py-2">KSh {Number(item.lineTotal || 0).toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="ml-auto max-w-xs space-y-1 rounded-xl border border-slate-200 p-3 text-sm dark:border-slate-800">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Subtotal</span>
+                <span>KSh {Number(selectedOrder.subtotal || 0).toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Shipping</span>
+                <span>KSh {Number(selectedOrder.shipping || 0).toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Tax</span>
+                <span>KSh {Number(selectedOrder.tax || 0).toFixed(2)}</span>
+              </div>
+              <div className="mt-2 flex justify-between border-t border-slate-200 pt-2 font-semibold dark:border-slate-700">
+                <span>Total</span>
+                <span>KSh {Number(selectedOrder.total || 0).toFixed(2)}</span>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
     </div>
   );
 };
