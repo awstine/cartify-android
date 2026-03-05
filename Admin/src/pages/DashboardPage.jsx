@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, consumePrefetchedGet } from "../api";
 import { Button } from "../components/ui/Button";
-import { PageHeader } from "../components/ui/PageHeader";
 import { EmptyState, ErrorState, LoadingState } from "../components/ui/States";
 import { Card } from "../components/ui/Surface";
 import { Table, Td } from "../components/ui/Table";
@@ -109,8 +108,6 @@ export const DashboardPage = () => {
 
   return (
     <div>
-      <PageHeader title="Dashboard Overview" description="Live KPIs, sales snapshot, and recent order activity." />
-
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {cards.map((card) => (
           <Card key={card.label}>
@@ -137,10 +134,17 @@ export const DashboardPage = () => {
                 {(() => {
                   const chartWidth = 640;
                   const chartHeight = 220;
-                  const padX = 20;
+                  const padX = 44;
                   const padY = 16;
                   const plotW = chartWidth - padX * 2;
                   const plotH = chartHeight - padY * 2;
+                  const yTickCount = 5;
+                  const yTicks = Array.from({ length: yTickCount }, (_, index) => {
+                    const ratio = index / (yTickCount - 1);
+                    const value = Math.round((1 - ratio) * maxTrend);
+                    const y = padY + ratio * plotH;
+                    return { value, y };
+                  });
                   const points = salesTrend.map((point, index) => {
                     const x =
                       salesTrend.length > 1 ? padX + (index / (salesTrend.length - 1)) * plotW : chartWidth / 2;
@@ -150,6 +154,27 @@ export const DashboardPage = () => {
                   const polylinePoints = points.map((point) => `${point.x},${point.y}`).join(" ");
                   return (
                     <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="h-full w-full">
+                      {yTicks.map((tick) => (
+                        <g key={`tick-${tick.y}`}>
+                          <line
+                            x1={padX}
+                            y1={tick.y}
+                            x2={chartWidth - padX}
+                            y2={tick.y}
+                            stroke="currentColor"
+                            strokeDasharray="3 3"
+                            className="text-slate-300 dark:text-slate-700"
+                          />
+                          <text
+                            x={padX - 6}
+                            y={tick.y + 3}
+                            textAnchor="end"
+                            className="fill-slate-500 text-[10px]"
+                          >
+                            {formatCurrency(tick.value)}
+                          </text>
+                        </g>
+                      ))}
                       <line x1={padX} y1={chartHeight - padY} x2={chartWidth - padX} y2={chartHeight - padY} stroke="currentColor" className="text-slate-300 dark:text-slate-700" />
                       <polyline
                         points={polylinePoints}

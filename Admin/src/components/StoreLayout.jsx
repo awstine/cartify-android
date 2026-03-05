@@ -6,6 +6,7 @@ import { resolveStoreSlugFromLocation, withStoreQuery } from "../storeMode";
 import { Button } from "./ui/Button";
 import { Drawer } from "./ui/Drawer";
 import { Input } from "./ui/Field";
+import { LoadingState } from "./ui/States";
 
 const STAFF_ROLES = ["merchant", "support", "manager", "admin", "super_admin"];
 
@@ -20,7 +21,37 @@ export const StoreLayout = ({ children }) => {
   const [categories, setCategories] = useState([]);
   const [searchText, setSearchText] = useState(searchParams.get("search") || "");
   const [categoryMenuOpen, setCategoryMenuOpen] = useState(false);
+  const [landingPrefetchReady, setLandingPrefetchReady] = useState(false);
+  const [landingPrefetchStarted, setLandingPrefetchStarted] = useState(false);
   const currentStoreSlug = resolveStoreSlugFromLocation(location.pathname, searchParams);
+  const isLandingRoute = location.pathname === "/" || location.pathname.startsWith("/store/");
+
+  useEffect(() => {
+    if (!isLandingRoute) {
+      setLandingPrefetchReady(true);
+      return;
+    }
+
+    let active = true;
+    setLandingPrefetchStarted(true);
+    setLandingPrefetchReady(false);
+
+    const params = currentStoreSlug ? { storeSlug: currentStoreSlug } : undefined;
+    Promise.all([
+      prefetchGet("/stores", { withProgress: true }),
+      prefetchGet("/products", { params, withProgress: true }),
+    ])
+      .catch(() => {
+        // Allow render even when prefetch fails; destination screen handles retry/error states.
+      })
+      .finally(() => {
+        if (active) setLandingPrefetchReady(true);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isLandingRoute, currentStoreSlug]);
 
   useEffect(() => {
     let active = true;
@@ -100,6 +131,10 @@ export const StoreLayout = ({ children }) => {
     const destination = `${basePath}${params.toString() ? `?${params.toString()}` : ""}`;
     navigateWithStorePrefetch(destination, "shop");
   };
+
+  if (isLandingRoute && landingPrefetchStarted && !landingPrefetchReady) {
+    return <LoadingState label="Loading store data..." showSpinner={false} />;
+  }
 
   return (
     <div className="min-h-screen bg-slate-50">

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { api, prefetchGet } from "../api";
 import { useAuth } from "../auth";
 import { useToast } from "../context/ToastContext";
@@ -77,6 +77,7 @@ export const Layout = ({ children }) => {
   const { user, logout } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -410,7 +411,7 @@ export const Layout = ({ children }) => {
             </div>
           </header>
           <main className="flex-1 overflow-x-hidden overflow-y-auto p-4 md:p-6">
-            <Breadcrumbs />
+            {location.pathname !== "/admin" ? <Breadcrumbs /> : null}
             {children}
           </main>
         </div>
