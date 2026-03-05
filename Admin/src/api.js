@@ -9,11 +9,7 @@ const resolveApiBaseUrl = () => {
     return "http://localhost:4000/api";
   }
 
-  if (typeof window !== "undefined" && window.location?.origin) {
-    return `${window.location.origin}/api`;
-  }
-
-  return "/api";
+  return "https://ecommerce-adroid-app.onrender.com/api";
 };
 
 const API_BASE_URL = resolveApiBaseUrl();
