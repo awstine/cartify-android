@@ -98,16 +98,16 @@ export const SalesPage = () => {
       </div>
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>
-          <p className="text-xs uppercase text-slate-500">Gross Sales</p>
-          <p className="mt-2 text-2xl font-bold">{money(report.summary.grossSales)}</p>
+          <p className="text-xs uppercase tracking-wide text-slate-500">Gross Sales</p>
+          <p className="mt-2 text-lg font-semibold">{money(report.summary.grossSales)}</p>
         </Card>
         <Card>
-          <p className="text-xs uppercase text-slate-500">Order Count</p>
-          <p className="mt-2 text-2xl font-bold">{report.summary.orderCount}</p>
+          <p className="text-xs uppercase tracking-wide text-slate-500">Order Count</p>
+          <p className="mt-2 text-lg font-semibold">{report.summary.orderCount}</p>
         </Card>
         <Card>
-          <p className="text-xs uppercase text-slate-500">Average Order Value</p>
-          <p className="mt-2 text-2xl font-bold">{money(report.summary.avgOrderValue)}</p>
+          <p className="text-xs uppercase tracking-wide text-slate-500">Average Order Value</p>
+          <p className="mt-2 text-lg font-semibold">{money(report.summary.avgOrderValue)}</p>
         </Card>
       </div>
 

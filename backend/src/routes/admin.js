@@ -599,6 +599,16 @@ router.get("/orders", async (req, res) => {
   res.json({ items, total, page, limit });
 });
 
+router.get("/orders/:id", async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    return res.status(400).json({ message: "Invalid order id" });
+  }
+
+  const order = await Order.findOne({ _id: req.params.id, ...getOrderScope(req) }).populate("userId", "name email");
+  if (!order) return res.status(404).json({ message: "Order not found" });
+  res.json(order);
+});
+
 router.patch(
   "/orders/:id/status",
   requireManagerOrAbove,

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api, consumePrefetchedGet } from "../api";
 import { Button } from "../components/ui/Button";
 import { Drawer } from "../components/ui/Drawer";
@@ -23,6 +24,7 @@ const toneFromStatus = (status) => {
 
 export const OrdersPage = () => {
   const { showToast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [orders, setOrders] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -72,6 +74,31 @@ export const OrdersPage = () => {
   useEffect(() => {
     loadOrders();
   }, [page, statusFilter]);
+
+  useEffect(() => {
+    const openOrderId = String(searchParams.get("open") || "").trim();
+    if (!openOrderId) return;
+
+    const fromList = orders.find((entry) => entry._id === openOrderId);
+    if (fromList) {
+      setSelectedOrder(fromList);
+      return;
+    }
+
+    let active = true;
+    (async () => {
+      try {
+        const response = await api.get(`/admin/orders/${openOrderId}`);
+        if (active) setSelectedOrder(response.data);
+      } catch (_err) {
+        // Ignore invalid/deleted order links silently.
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [searchParams, orders]);
 
   const filteredOrders = useMemo(() => {
     if (!search) return orders;
@@ -239,7 +266,12 @@ export const OrdersPage = () => {
 
       <Modal
         isOpen={Boolean(selectedOrder)}
-        onClose={() => setSelectedOrder(null)}
+        onClose={() => {
+          setSelectedOrder(null);
+          const next = new URLSearchParams(searchParams);
+          next.delete("open");
+          setSearchParams(next, { replace: true });
+        }}
         title={`Order #${selectedOrder?._id?.slice(-8) || ""} Details`}
         maxWidthClass="sm:max-w-5xl"
         footer={

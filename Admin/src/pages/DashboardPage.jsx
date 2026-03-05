@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api, consumePrefetchedGet } from "../api";
 import { Button } from "../components/ui/Button";
 import { PageHeader } from "../components/ui/PageHeader";
@@ -9,11 +10,50 @@ import { Table, Td } from "../components/ui/Table";
 const formatCurrency = (value) =>
   new Intl.NumberFormat("en-KE", { style: "currency", currency: "KES" }).format(value || 0);
 
+const StatIcon = ({ label }) => {
+  if (label === "Products") {
+    return (
+      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M3 7 12 3l9 4-9 4-9-4Z" />
+        <path d="M3 7v10l9 4 9-4V7" />
+      </svg>
+    );
+  }
+  if (label === "Categories") {
+    return (
+      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M3 6h8v6H3zM13 6h8v4h-8zM13 12h8v6h-8zM3 14h8v4H3z" />
+      </svg>
+    );
+  }
+  if (label === "Orders") {
+    return (
+      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M6 4h12l2 4H4l2-4Z" />
+        <path d="M5 8h14v12H5z" />
+        <path d="M9 12h6" />
+      </svg>
+    );
+  }
+  if (label === "Customers") {
+    return (
+      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+        <circle cx="9" cy="8" r="3" />
+        <path d="M3 19c0-3.3 2.7-6 6-6s6 2.7 6 6" />
+        <circle cx="17" cy="9" r="2" />
+      </svg>
+    );
+  }
+  return null;
+};
+
 export const DashboardPage = () => {
+  const navigate = useNavigate();
   const [metrics, setMetrics] = useState(null);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [hoveredTrendPoint, setHoveredTrendPoint] = useState(null);
 
   const loadDashboard = async () => {
     const prefetchedDashboard = consumePrefetchedGet("/admin/dashboard");
@@ -58,8 +98,14 @@ export const DashboardPage = () => {
   if (loading) return <LoadingState label="Loading dashboard..." />;
   if (!metrics) return <EmptyState title="No dashboard data" description="Try refreshing the page." />;
 
-  const salesTrend = Array.isArray(metrics.salesTrend) ? metrics.salesTrend : [];
-  const maxTrend = Math.max(...salesTrend.map((point) => Number(point.sales || 0)), 1);
+  const salesTrend = (Array.isArray(metrics.salesTrend) ? metrics.salesTrend : []).map((point) => {
+    const value = Number(point?.sales ?? 0);
+    return {
+      date: point?.date || "",
+      sales: Number.isFinite(value) && value > 0 ? value : 0,
+    };
+  });
+  const maxTrend = Math.max(1, ...salesTrend.map((point) => point.sales));
 
   return (
     <div>
@@ -68,8 +114,13 @@ export const DashboardPage = () => {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {cards.map((card) => (
           <Card key={card.label}>
-            <p className="text-xs uppercase tracking-wide text-slate-500">{card.label}</p>
-            <p className="mt-2 font-heading text-2xl font-bold text-slate-900 dark:text-slate-100">{card.value}</p>
+            <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-slate-500">
+              <span className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-slate-100 text-slate-700">
+                <StatIcon label={card.label} />
+              </span>
+              <span>{card.label}</span>
+            </div>
+            <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-slate-100">{card.value}</p>
           </Card>
         ))}
       </div>
@@ -82,21 +133,62 @@ export const DashboardPage = () => {
             <EmptyState title="No trend data" description="Sales graph will appear when orders are available." />
           ) : (
             <div className="mt-4">
-              <div className="flex h-56 items-end gap-1">
-                {salesTrend.map((point) => {
-                  const height = Math.max(6, (Number(point.sales || 0) / maxTrend) * 100);
+              <div className="relative h-56 w-full overflow-visible rounded-xl border border-slate-200 bg-slate-50 p-2 dark:border-slate-800 dark:bg-slate-900/40">
+                {(() => {
+                  const chartWidth = 640;
+                  const chartHeight = 220;
+                  const padX = 20;
+                  const padY = 16;
+                  const plotW = chartWidth - padX * 2;
+                  const plotH = chartHeight - padY * 2;
+                  const points = salesTrend.map((point, index) => {
+                    const x =
+                      salesTrend.length > 1 ? padX + (index / (salesTrend.length - 1)) * plotW : chartWidth / 2;
+                    const y = padY + (1 - point.sales / maxTrend) * plotH;
+                    return { ...point, x, y };
+                  });
+                  const polylinePoints = points.map((point) => `${point.x},${point.y}`).join(" ");
                   return (
-                    <div key={point.date} className="group flex flex-1 flex-col items-center">
-                      <div className="mb-1 hidden rounded-md bg-primary px-2 py-1 text-[10px] text-white group-hover:block">
-                        {formatCurrency(point.sales)}
-                      </div>
-                      <div
-                        className="w-full rounded-t-md bg-primary transition-all duration-500"
-                        style={{ height: `${height}%` }}
+                    <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="h-full w-full">
+                      <line x1={padX} y1={chartHeight - padY} x2={chartWidth - padX} y2={chartHeight - padY} stroke="currentColor" className="text-slate-300 dark:text-slate-700" />
+                      <polyline
+                        points={polylinePoints}
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="3"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="text-primary"
                       />
-                    </div>
+                      {points.map((point) => (
+                        <circle
+                          key={point.date}
+                          cx={point.x}
+                          cy={point.y}
+                          r="4.5"
+                          className="cursor-pointer fill-white stroke-primary transition hover:r-6"
+                          strokeWidth="2"
+                          onMouseEnter={() => setHoveredTrendPoint(point)}
+                          onMouseLeave={() => setHoveredTrendPoint(null)}
+                        />
+                      ))}
+                    </svg>
                   );
-                })}
+                })()}
+                {hoveredTrendPoint ? (
+                  <div
+                    className="pointer-events-none absolute z-10 rounded-md bg-slate-900 px-2 py-1 text-[11px] text-white shadow"
+                    style={{
+                      left: `${(hoveredTrendPoint.x / 640) * 100}%`,
+                      top: `${(hoveredTrendPoint.y / 220) * 100}%`,
+                      transform:
+                        hoveredTrendPoint.y < 34 ? "translate(-50%, 12px)" : "translate(-50%, -120%)",
+                    }}
+                  >
+                    <p>{hoveredTrendPoint.date}</p>
+                    <p className="font-semibold">{formatCurrency(hoveredTrendPoint.sales)}</p>
+                  </div>
+                ) : null}
               </div>
               <div className="mt-3 flex justify-between text-[10px] text-slate-500">
                 <span>{salesTrend[0]?.date}</span>
@@ -123,7 +215,15 @@ export const DashboardPage = () => {
                 rowKey={(order) => order._id}
                 renderRow={(order) => (
                   <>
-                    <Td>#{order._id.slice(-8)}</Td>
+                    <Td>
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/admin/orders?open=${encodeURIComponent(order._id)}`)}
+                        className="font-semibold text-primary hover:underline"
+                      >
+                        #{order._id.slice(-8)}
+                      </button>
+                    </Td>
                     <Td>{order.userId?.email || "-"}</Td>
                     <Td>{formatCurrency(order.total)}</Td>
                   </>

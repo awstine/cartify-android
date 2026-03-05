@@ -142,46 +142,65 @@ export const Layout = ({ children }) => {
   }, [seenKey, showToast]);
 
   const prefetchAdminRoute = (route) => {
-    if (!route || prefetchedRoutesRef.current.has(route)) return;
-    prefetchedRoutesRef.current.add(route);
+    if (!route) return Promise.resolve();
     const tasks = {
       "/admin": [
-        prefetchGet("/admin/dashboard"),
-        prefetchGet("/admin/orders", { params: { limit: 5 } }),
+        prefetchGet("/admin/dashboard", { withProgress: true }),
+        prefetchGet("/admin/orders", { params: { limit: 5 }, withProgress: true }),
       ],
       "/admin/products": [
-        prefetchGet("/admin/products", { params: { page: 1, limit: 12 } }),
-        prefetchGet("/admin/categories"),
+        prefetchGet("/admin/products", { params: { page: 1, limit: 12 }, withProgress: true }),
+        prefetchGet("/admin/categories", { withProgress: true }),
       ],
-      "/admin/categories": [prefetchGet("/admin/categories")],
-      "/admin/orders": [prefetchGet("/admin/orders", { params: { page: 1, limit: 12 } })],
-      "/admin/disputes": [prefetchGet("/admin/disputes", { params: { page: 1, limit: 12 } })],
-      "/admin/users": [prefetchGet("/admin/users", { params: { page: 1, limit: 12 } })],
-      "/admin/merchants": [prefetchGet("/admin/merchants", { params: { page: 1, limit: 12 } })],
-      "/admin/sales": [prefetchGet("/admin/sales")],
-      "/admin/coupons": [prefetchGet("/admin/coupons")],
-      "/admin/audit-logs": [prefetchGet("/admin/audit-logs", { params: { page: 1, limit: 20 } })],
-      "/admin/profile": [prefetchGet("/admin/profile")],
+      "/admin/categories": [prefetchGet("/admin/categories", { withProgress: true })],
+      "/admin/orders": [prefetchGet("/admin/orders", { params: { page: 1, limit: 12 }, withProgress: true })],
+      "/admin/disputes": [prefetchGet("/admin/disputes", { params: { page: 1, limit: 12 }, withProgress: true })],
+      "/admin/users": [prefetchGet("/admin/users", { params: { page: 1, limit: 12 }, withProgress: true })],
+      "/admin/merchants": [prefetchGet("/admin/merchants", { params: { page: 1, limit: 12 }, withProgress: true })],
+      "/admin/sales": [prefetchGet("/admin/sales", { withProgress: true })],
+      "/admin/coupons": [prefetchGet("/admin/coupons", { withProgress: true })],
+      "/admin/audit-logs": [prefetchGet("/admin/audit-logs", { params: { page: 1, limit: 20 }, withProgress: true })],
+      "/admin/profile": [prefetchGet("/admin/profile", { withProgress: true })],
     };
-    Promise.all(tasks[route] || []).catch(() => {});
+    const execute = () => Promise.all(tasks[route] || []).catch(() => {});
+    if (prefetchedRoutesRef.current.has(route)) return execute();
+    prefetchedRoutesRef.current.add(route);
+    return execute();
+  };
+
+  const navigateWithPrefetch = async (route, { closeMenus = false } = {}) => {
+    try {
+      await prefetchAdminRoute(route);
+    } catch (_err) {
+      // Navigate even if prefetch fails.
+    }
+    if (closeMenus) {
+      setMobileOpen(false);
+      setNotificationsOpen(false);
+      setProfileOpen(false);
+    }
+    navigate(route);
   };
 
   const navLinks = useMemo(
     () => (
-      <nav className="mt-6 flex flex-col gap-1">
+      <nav className="mt-4 flex flex-col gap-0.5">
         {allowedNavItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
             end={item.to === "/admin"}
             className={({ isActive }) =>
-              `rounded-xl px-3 py-2.5 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 ${
+              `rounded-xl px-3 py-1.5 text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 ${
                 isActive
                   ? "bg-primary text-white dark:bg-primary dark:text-white"
                   : "text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
               }`
             }
-            onClick={() => setMobileOpen(false)}
+            onClick={async (event) => {
+              event.preventDefault();
+              await navigateWithPrefetch(item.to, { closeMenus: true });
+            }}
             onMouseEnter={() => prefetchAdminRoute(item.to)}
             onFocus={() => prefetchAdminRoute(item.to)}
           >
@@ -209,7 +228,7 @@ export const Layout = ({ children }) => {
           {navLinks}
         </>
       ) : (
-        <div className="mt-4 flex flex-col items-center gap-2">
+        <div className="mt-3 flex flex-col items-center gap-1.5">
           {allowedNavItems.map((item) => (
             <NavLink
               key={`compact-${item.to}`}
@@ -223,6 +242,10 @@ export const Layout = ({ children }) => {
                 }`
               }
               title={item.label}
+              onClick={async (event) => {
+                event.preventDefault();
+                await navigateWithPrefetch(item.to, { closeMenus: true });
+              }}
               onMouseEnter={() => prefetchAdminRoute(item.to)}
               onFocus={() => prefetchAdminRoute(item.to)}
             >
@@ -260,7 +283,7 @@ export const Layout = ({ children }) => {
                   aria-label="Users"
                   onMouseEnter={() => prefetchAdminRoute("/admin/users")}
                   onFocus={() => prefetchAdminRoute("/admin/users")}
-                  onClick={() => navigate("/admin/users")}
+                  onClick={() => navigateWithPrefetch("/admin/users", { closeMenus: true })}
                 >
                   <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
                     <circle cx="9" cy="8" r="3" />
@@ -308,8 +331,7 @@ export const Layout = ({ children }) => {
                             key={order._id}
                             type="button"
                             onClick={() => {
-                              setNotificationsOpen(false);
-                              navigate("/admin/orders");
+                              navigateWithPrefetch("/admin/orders", { closeMenus: true });
                             }}
                             className="block w-full rounded-lg px-2 py-2 text-left hover:bg-slate-100 dark:hover:bg-slate-800"
                           >
@@ -340,10 +362,7 @@ export const Layout = ({ children }) => {
                       className="mt-2 w-full"
                       onMouseEnter={() => prefetchAdminRoute("/admin/profile")}
                       onFocus={() => prefetchAdminRoute("/admin/profile")}
-                      onClick={() => {
-                        setProfileOpen(false);
-                        navigate("/admin/profile");
-                      }}
+                      onClick={() => navigateWithPrefetch("/admin/profile", { closeMenus: true })}
                     >
                       Profile
                     </Button>
