@@ -16,6 +16,9 @@ body {
   min-width: 320px;
   background: #f8fafc;
   color: #0f172a;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 .dark body {
@@ -36,4 +39,29 @@ body {
 :focus-visible {
   outline: 2px solid #94a3b8;
   outline-offset: 2px;
+}
+
+/* Improve readability for non-bold utility text across the app. */
+.text-slate-400 {
+  color: #475569;
+}
+
+.text-slate-500 {
+  color: #334155;
+}
+
+.text-slate-600 {
+  color: #1e293b;
+}
+
+.dark .text-slate-400 {
+  color: #e2e8f0;
+}
+
+.dark .text-slate-500 {
+  color: #cbd5e1;
+}
+
+.dark .text-slate-600 {
+  color: #e2e8f0;
 }
