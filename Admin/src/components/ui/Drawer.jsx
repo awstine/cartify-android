@@ -32,7 +32,7 @@ export const Drawer = ({ isOpen, onClose, title, children, side = "left" }) => {
 
   if (!isMounted) return null;
   return (
-    <div className={cn("fixed inset-0 z-50 bg-slate-950/50 transition-opacity ease-out", isVisible ? "opacity-100" : "opacity-0")} style={{ transitionDuration: `${DRAWER_TRANSITION_MS}ms` }}>
+    <div className={cn("fixed inset-0 z-50 bg-transparent transition-opacity ease-out", isVisible ? "opacity-100" : "opacity-0")} style={{ transitionDuration: `${DRAWER_TRANSITION_MS}ms` }}>
       <button className="absolute inset-0 h-full w-full cursor-default" onClick={onClose} aria-label="Close drawer" />
       <aside
         className={cn(
@@ -42,6 +42,7 @@ export const Drawer = ({ isOpen, onClose, title, children, side = "left" }) => {
             : `right-0 border-l ${isVisible ? "translate-x-0" : "translate-x-full"}`
         )}
         style={{ transitionDuration: `${DRAWER_TRANSITION_MS}ms` }}
+        onMouseLeave={onClose}
       >
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-base font-semibold">{title}</h3>

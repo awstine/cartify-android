@@ -5,7 +5,7 @@ import { Button } from "../components/ui/Button";
 import { Drawer } from "../components/ui/Drawer";
 import { Input, Select } from "../components/ui/Field";
 import { Pagination } from "../components/ui/Pagination";
-import { PageHeader, Toolbar } from "../components/ui/PageHeader";
+import { PageHeader } from "../components/ui/PageHeader";
 import { RowActions } from "../components/ui/RowActions";
 import { EmptyState, ErrorState, LoadingState } from "../components/ui/States";
 import { Badge } from "../components/ui/Surface";
@@ -185,58 +185,25 @@ export const ProductsPage = () => {
         title="Products"
         description={`Manage product catalog, pricing, and statuses. Out of stock on this view: ${outOfStockCount}`}
         action={
-          <Button
-            onClick={() => {
-              setEditingProduct(null);
-              setIsModalOpen(true);
-            }}
-          >
-            Add New
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" onClick={() => setIsFilterOpen(true)}>
+              Search
+            </Button>
+            <Button
+              onClick={() => {
+                setEditingProduct(null);
+                setIsModalOpen(true);
+              }}
+            >
+              Add New
+            </Button>
+          </div>
         }
       />
 
-      <Toolbar onOpenFilters={() => setIsFilterOpen(true)}>
-        <Input
-          value={search}
-          onChange={(event) => {
-            setPage(1);
-            setSearch(event.target.value);
-          }}
-          placeholder="Search products"
-          aria-label="Search products"
-          className="max-w-sm"
-        />
-        <Select
-          value={category}
-          onChange={(event) => setCategoryFilter(event.target.value)}
-          aria-label="Filter by category"
-          className="max-w-xs"
-        >
-          <option value="">All Categories</option>
-          {categoryOptions.map((cat) => (
-            <option key={cat.value} value={cat.value}>
-              {cat.label}
-            </option>
-          ))}
-        </Select>
-        <Select value={stockFilter} onChange={(event) => { setPage(1); setStockFilter(event.target.value); }} aria-label="Filter by stock" className="max-w-xs">
-          <option value="all">All Stock</option>
-          <option value="out">Out of Stock</option>
-          <option value="low">Low Stock (1-5)</option>
-          <option value="in">In Stock</option>
-        </Select>
-        <Select value={sortBy} onChange={(event) => setSortBy(event.target.value)} aria-label="Sort products" className="max-w-xs">
-          <option value="newest">Newest</option>
-          <option value="name_asc">Name A-Z</option>
-          <option value="price_asc">Price Low-High</option>
-          <option value="price_desc">Price High-Low</option>
-        </Select>
-      </Toolbar>
-
-      <Drawer isOpen={isFilterOpen} onClose={() => setIsFilterOpen(false)} title="Product Filters" side="right">
+      <Drawer isOpen={isFilterOpen} onClose={() => setIsFilterOpen(false)} title="Product Search" side="right">
         <div className="space-y-3">
-          <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search products" aria-label="Search products mobile" />
+          <Input value={search} onChange={(event) => { setPage(1); setSearch(event.target.value); }} placeholder="Search products" aria-label="Search products mobile" />
           <Select value={category} onChange={(event) => setCategoryFilter(event.target.value)} aria-label="Filter by category mobile">
             <option value="">All Categories</option>
             {categoryOptions.map((cat) => (

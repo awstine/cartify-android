@@ -6,7 +6,6 @@ import { useToast } from "../context/ToastContext";
 import { Breadcrumbs } from "./ui/Breadcrumbs";
 import { Button } from "./ui/Button";
 import { Drawer } from "./ui/Drawer";
-import { Input } from "./ui/Field";
 
 const navItems = [
   { to: "/admin", label: "Dashboard", icon: "dashboard" },
@@ -84,7 +83,6 @@ export const Layout = ({ children }) => {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [recentOrders, setRecentOrders] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [query, setQuery] = useState("");
   const firstPollRef = useRef(true);
   const prefetchedRoutesRef = useRef(new Set());
 
@@ -220,9 +218,9 @@ export const Layout = ({ children }) => {
 
   const sidebar = (
     <aside className={`${collapsed ? "w-20" : "w-64"} hidden h-screen shrink-0 overflow-y-auto border-r border-slate-200 bg-white p-4 transition-all dark:border-slate-800 dark:bg-slate-950 lg:flex lg:flex-col`}>
-      <div className="flex items-center justify-between">
-        <h1 className="font-heading text-lg font-bold text-slate-900 dark:text-slate-100">{collapsed ? "CA" : "Cartify Admin"}</h1>
-        <Button variant="ghost" className="px-2 py-1" onClick={() => setCollapsed((prev) => !prev)} aria-label="Collapse sidebar">
+      <div className="relative -mx-4 flex h-[48px] items-center justify-center border-b border-slate-200 px-4 dark:border-slate-800">
+        <h1 className="text-center font-heading text-lg font-bold text-slate-900 dark:text-slate-100">{collapsed ? "C" : "Cartify"}</h1>
+        <Button variant="ghost" className="absolute right-0 px-2 py-1" onClick={() => setCollapsed((prev) => !prev)} aria-label="Collapse sidebar">
           {collapsed ? ">" : "<"}
         </Button>
       </div>
@@ -261,11 +259,11 @@ export const Layout = ({ children }) => {
       </div>
       <div className="mt-auto border-t border-slate-200 pt-3 dark:border-slate-800">
         {!collapsed ? (
-          <Button variant="secondary" className="w-full" onClick={logout}>
+          <Button variant="ghost" className="w-full rounded-none border-0 text-orange-500 hover:bg-orange-50 hover:text-orange-600 dark:hover:bg-orange-900/20" onClick={logout}>
             Logout
           </Button>
         ) : (
-          <Button variant="ghost" className="mx-auto flex h-9 w-9 items-center justify-center rounded-xl px-0" onClick={logout} aria-label="Logout">
+          <Button variant="ghost" className="mx-auto flex h-9 w-9 items-center justify-center rounded-none border-0 px-0 text-orange-500 hover:bg-orange-50 hover:text-orange-600 dark:hover:bg-orange-900/20" onClick={logout} aria-label="Logout">
             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M10 17l5-5-5-5" />
               <path d="M15 12H3" />
@@ -288,14 +286,7 @@ export const Layout = ({ children }) => {
                 <path d="M4 7h16M4 12h16M4 17h16" />
               </svg>
             </Button>
-            <div className="hidden w-full max-w-md md:block">
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search products, orders, customers..."
-                aria-label="Search dashboard"
-              />
-            </div>
+            <p className="font-heading text-lg font-semibold text-slate-900 dark:text-slate-100">Admin</p>
             <div className="ml-auto flex items-center gap-2">
               {isPlatformAdmin ? (
                 <Button

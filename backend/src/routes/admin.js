@@ -980,6 +980,12 @@ router.delete("/users/:id", requireAdminOrAbove, async (req, res) => {
     return res.status(400).json({ message: "You cannot delete your own account." });
   }
 
+  const targetUser = await User.findById(req.params.id).select("role");
+  if (!targetUser) return res.status(404).json({ message: "User not found" });
+  if (targetUser.role === "super_admin") {
+    return res.status(403).json({ message: "Super admin accounts cannot be deleted." });
+  }
+
   const deleted = await User.findByIdAndDelete(req.params.id);
   if (!deleted) return res.status(404).json({ message: "User not found" });
 
