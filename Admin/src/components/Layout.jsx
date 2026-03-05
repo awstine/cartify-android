@@ -215,45 +215,64 @@ export const Layout = ({ children }) => {
     [setMobileOpen, allowedNavItems]
   );
 
+  const profileInitial = String(user?.name || user?.email || "A").trim().charAt(0).toUpperCase() || "A";
+
   const sidebar = (
-    <aside className={`${collapsed ? "w-20" : "w-64"} hidden h-screen shrink-0 overflow-y-auto border-r border-slate-200 bg-white p-4 transition-all dark:border-slate-800 dark:bg-slate-950 lg:block`}>
+    <aside className={`${collapsed ? "w-20" : "w-64"} hidden h-screen shrink-0 overflow-y-auto border-r border-slate-200 bg-white p-4 transition-all dark:border-slate-800 dark:bg-slate-950 lg:flex lg:flex-col`}>
       <div className="flex items-center justify-between">
         <h1 className="font-heading text-lg font-bold text-slate-900 dark:text-slate-100">{collapsed ? "CA" : "Cartify Admin"}</h1>
         <Button variant="ghost" className="px-2 py-1" onClick={() => setCollapsed((prev) => !prev)} aria-label="Collapse sidebar">
           {collapsed ? ">" : "<"}
         </Button>
       </div>
-      {!collapsed ? (
-        <>
-          {navLinks}
-        </>
-      ) : (
-        <div className="mt-3 flex flex-col items-center gap-1.5">
-          {allowedNavItems.map((item) => (
-            <NavLink
-              key={`compact-${item.to}`}
-              to={item.to}
-              end={item.to === "/admin"}
-              className={({ isActive }) =>
-                `flex h-9 w-9 items-center justify-center rounded-xl text-xs transition ${
-                  isActive
-                    ? "bg-primary text-white dark:bg-primary dark:text-white"
-                    : "text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-                }`
-              }
-              title={item.label}
-              onClick={async (event) => {
-                event.preventDefault();
-                await navigateWithPrefetch(item.to, { closeMenus: true });
-              }}
-              onMouseEnter={() => prefetchAdminRoute(item.to)}
-              onFocus={() => prefetchAdminRoute(item.to)}
-            >
-              <NavIcon type={item.icon} />
-            </NavLink>
-          ))}
-        </div>
-      )}
+      <div>
+        {!collapsed ? (
+          <>
+            {navLinks}
+          </>
+        ) : (
+          <div className="mt-3 flex flex-col items-center gap-1.5">
+            {allowedNavItems.map((item) => (
+              <NavLink
+                key={`compact-${item.to}`}
+                to={item.to}
+                end={item.to === "/admin"}
+                className={({ isActive }) =>
+                  `flex h-9 w-9 items-center justify-center rounded-xl text-xs transition ${
+                    isActive
+                      ? "bg-primary text-white dark:bg-primary dark:text-white"
+                      : "text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                  }`
+                }
+                title={item.label}
+                onClick={async (event) => {
+                  event.preventDefault();
+                  await navigateWithPrefetch(item.to, { closeMenus: true });
+                }}
+                onMouseEnter={() => prefetchAdminRoute(item.to)}
+                onFocus={() => prefetchAdminRoute(item.to)}
+              >
+                <NavIcon type={item.icon} />
+              </NavLink>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="mt-auto border-t border-slate-200 pt-3 dark:border-slate-800">
+        {!collapsed ? (
+          <Button variant="secondary" className="w-full" onClick={logout}>
+            Logout
+          </Button>
+        ) : (
+          <Button variant="ghost" className="mx-auto flex h-9 w-9 items-center justify-center rounded-xl px-0" onClick={logout} aria-label="Logout">
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M10 17l5-5-5-5" />
+              <path d="M15 12H3" />
+              <path d="M21 3v18" />
+            </svg>
+          </Button>
+        )}
+      </div>
     </aside>
   );
 
@@ -315,7 +334,10 @@ export const Layout = ({ children }) => {
                   </span>
                 </Button>
                 {notificationsOpen ? (
-                  <div className="absolute right-0 z-40 mt-1 w-80 rounded-xl border border-slate-200 bg-white p-2 dark:border-slate-800 dark:bg-slate-950">
+                  <div
+                    className="absolute right-0 z-40 mt-1 w-80 rounded-xl border border-slate-200 bg-white p-2 dark:border-slate-800 dark:bg-slate-950"
+                    onMouseLeave={() => setNotificationsOpen(false)}
+                  >
                     <div className="mb-2 flex items-center justify-between px-2">
                       <p className="text-sm font-semibold">Notifications</p>
                       <Button variant="ghost" className="px-2 py-1 text-xs" onClick={() => markNotificationsRead()}>
@@ -351,10 +373,23 @@ export const Layout = ({ children }) => {
               </div>
               <div className="relative">
                 <Button variant="ghost" onClick={() => setProfileOpen((prev) => !prev)} aria-label="Profile menu">
-                  {user?.name?.slice(0, 1) || "A"}
+                  {user?.profileImageUrl ? (
+                    <img
+                      src={user.profileImageUrl}
+                      alt={user?.name || "Profile"}
+                      className="h-8 w-8 rounded-full border border-slate-200 object-cover dark:border-slate-700"
+                    />
+                  ) : (
+                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-orange-500 text-sm font-semibold text-white">
+                      {profileInitial}
+                    </span>
+                  )}
                 </Button>
                 {profileOpen ? (
-                  <div className="absolute right-0 mt-1 w-48 rounded-xl border border-slate-200 bg-white p-2 dark:border-slate-800 dark:bg-slate-950">
+                  <div
+                    className="absolute right-0 mt-1 w-48 rounded-xl border border-slate-200 bg-white p-2 dark:border-slate-800 dark:bg-slate-950"
+                    onMouseLeave={() => setProfileOpen(false)}
+                  >
                     <p className="px-2 py-1 text-xs text-slate-500">Signed in as</p>
                     <p className="truncate px-2 py-1 text-sm font-medium">{user?.email}</p>
                     <Button

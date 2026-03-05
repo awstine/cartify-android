@@ -195,12 +195,12 @@ export const UsersPage = () => {
                 <Td>{new Date(item.createdAt).toLocaleDateString()}</Td>
                 <Td>
                   {canManageUsers ? (
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-2 whitespace-nowrap">
                       <Select
                         value={item.role}
                         onChange={(event) => updateRole(item, event.target.value)}
                         disabled={updatingId === item._id || deletingId === item._id || item._id === user?.id}
-                        className="min-w-[140px]"
+                        className="w-[160px]"
                         aria-label={`Change role for ${item.email}`}
                       >
                         {ROLE_OPTIONS.map((role) => (
@@ -211,6 +211,7 @@ export const UsersPage = () => {
                       </Select>
                       <Button
                         variant="danger"
+                        className="shrink-0"
                         onClick={() => deleteUser(item)}
                         disabled={deletingId === item._id || updatingId === item._id || item._id === user?.id}
                       >
