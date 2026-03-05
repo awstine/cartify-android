@@ -8,6 +8,8 @@ import { CategoriesPage } from "./pages/CategoriesPage";
 import { CouponsPage } from "./pages/CouponsPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { DisputesPage } from "./pages/DisputesPage";
+import { GrowthDashboardPage } from "./pages/GrowthDashboardPage";
+import { HelpSafetyPage } from "./pages/HelpSafetyPage";
 import { LoginPage } from "./pages/LoginPage";
 import { MerchantsPage } from "./pages/MerchantsPage";
 import { MyOrdersPage } from "./pages/MyOrdersPage";
@@ -67,6 +69,7 @@ const App = () => {
         path="/wishlist"
         element={isAuthenticated && isStaff ? <Navigate to="/admin/profile" replace /> : withAuth(<StoreWishlistPage />)}
       />
+      <Route path="/help-safety" element={withStoreLayout(<HelpSafetyPage />)} />
 
       <Route path="/admin" element={withLayout(<DashboardPage />)} />
       <Route path="/admin/products" element={withLayout(<ProductsPage />)} />
@@ -75,6 +78,7 @@ const App = () => {
       <Route path="/admin/users" element={withLayout(<UsersPage />)} />
       <Route path="/admin/merchants" element={withLayout(<MerchantsPage />)} />
       <Route path="/admin/disputes" element={withLayout(<DisputesPage />)} />
+      <Route path="/admin/growth" element={withLayout(<GrowthDashboardPage />)} />
       <Route path="/admin/sales" element={withLayout(<SalesPage />)} />
       <Route path="/admin/coupons" element={withLayout(<CouponsPage />)} />
       <Route path="/admin/audit-logs" element={withLayout(<AuditLogsPage />)} />

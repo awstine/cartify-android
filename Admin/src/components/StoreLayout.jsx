@@ -121,12 +121,18 @@ export const StoreLayout = ({ children }) => {
     }
     navigate(path);
   };
-  const applyShopFilters = ({ search, category }) => {
+  const applyShopFilters = ({ search, category, inStock, minRating, maxPrice } = {}) => {
     const params = new URLSearchParams();
     const nextSearch = search !== undefined ? String(search).trim() : String(searchParams.get("search") || "").trim();
     const nextCategory = category !== undefined ? category : searchParams.get("category") || "all";
+    const nextInStock = inStock !== undefined ? Boolean(inStock) : String(searchParams.get("inStock") || "").toLowerCase() === "true";
+    const nextMinRating = minRating !== undefined ? Number(minRating || 0) : Number(searchParams.get("minRating") || 0);
+    const nextMaxPrice = maxPrice !== undefined ? Number(maxPrice || 0) : Number(searchParams.get("maxPrice") || 0);
     if (nextSearch) params.set("search", nextSearch);
     if (nextCategory && nextCategory !== "all") params.set("category", nextCategory);
+    if (nextInStock) params.set("inStock", "true");
+    if (nextMinRating > 0) params.set("minRating", String(nextMinRating));
+    if (nextMaxPrice > 0) params.set("maxPrice", String(nextMaxPrice));
     const basePath = currentStoreSlug ? `/store/${currentStoreSlug}` : "/";
     const destination = `${basePath}${params.toString() ? `?${params.toString()}` : ""}`;
     navigateWithStorePrefetch(destination, "shop");
@@ -462,6 +468,9 @@ export const StoreLayout = ({ children }) => {
               }}
             >
               Profile
+            </Link>
+            <Link to="/help-safety" className="hover:text-slate-900">
+              Help & Safety
             </Link>
             {canAccessAdmin ? (
               <Link

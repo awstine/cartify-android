@@ -33,6 +33,11 @@ export const StoreCartPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [couponCode, setCouponCode] = useState("");
+  const [couponMessage, setCouponMessage] = useState("");
+  const [appliedCouponCode, setAppliedCouponCode] = useState("");
+  const [addresses, setAddresses] = useState([]);
+  const [selectedAddressId, setSelectedAddressId] = useState("");
 
   const loadCart = async () => {
     const prefetched = consumePrefetchedGet("/cart");
@@ -55,6 +60,23 @@ export const StoreCartPage = () => {
 
   useEffect(() => {
     loadCart();
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    api
+      .get("/users/me")
+      .then((response) => {
+        if (!active) return;
+        const nextAddresses = response.data?.addresses || [];
+        setAddresses(nextAddresses);
+        const defaultAddress = nextAddresses.find((address) => address.isDefault);
+        setSelectedAddressId(defaultAddress?.id || nextAddresses?.[0]?.id || "");
+      })
+      .catch(() => null);
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -115,18 +137,41 @@ export const StoreCartPage = () => {
   const checkout = async () => {
     setSubmitting(true);
     try {
-      const response = await api.post("/cart/checkout");
+      const selectedAddress = addresses.find((address) => address.id === selectedAddressId) || {};
+      const response = await api.post("/cart/checkout", {
+        couponCode: appliedCouponCode,
+        shippingAddress: {
+          fullName: selectedAddress.fullName || "",
+          phone: selectedAddress.phone || "",
+          line1: selectedAddress.line1 || "",
+          line2: selectedAddress.line2 || "",
+          city: selectedAddress.city || "",
+          state: selectedAddress.state || "",
+          postalCode: selectedAddress.postalCode || "",
+          country: selectedAddress.country || "",
+        },
+      });
       const orderCount = Array.isArray(response.data?.orderIds) ? response.data.orderIds.length : 1;
       showToast({
         type: "success",
         title: orderCount > 1 ? `${orderCount} store orders placed` : "Order placed successfully",
       });
+      setCouponCode("");
+      setAppliedCouponCode("");
+      setCouponMessage("");
       await loadCart();
     } catch (err) {
       showToast({ type: "error", title: "Checkout failed", message: err?.response?.data?.message || "Try again." });
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const applyCoupon = async () => {
+    const trimmed = String(couponCode || "").trim().toUpperCase();
+    if (!trimmed) return;
+    setAppliedCouponCode(trimmed);
+    setCouponMessage(`${trimmed} will be applied at checkout`);
   };
 
   const openProduct = async (productId) => {
@@ -208,6 +253,38 @@ export const StoreCartPage = () => {
             </div>
             <aside className="rounded-2xl border border-slate-200 bg-white p-4 xl:sticky xl:top-24">
               <h2 className="text-lg font-semibold text-slate-900">Order Summary</h2>
+              <div className="mt-3 space-y-2">
+                <div className="flex gap-2">
+                  <input
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                    placeholder="Coupon code (SAVE10, WELCOME5, FREESHIP)"
+                    value={couponCode}
+                    onChange={(event) => setCouponCode(event.target.value)}
+                  />
+                  <Button variant="secondary" className="px-3" onClick={applyCoupon} disabled={!couponCode.trim() || submitting}>
+                    Apply
+                  </Button>
+                </div>
+                {couponMessage ? <p className="text-xs text-slate-600">{couponMessage}</p> : null}
+              </div>
+              {addresses.length > 0 ? (
+                <div className="mt-3">
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Delivery Address</p>
+                  <select
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                    value={selectedAddressId}
+                    onChange={(event) => setSelectedAddressId(event.target.value)}
+                  >
+                    {addresses.map((address) => (
+                      <option key={address.id} value={address.id}>
+                        {address.label} - {address.line1}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <p className="mt-3 text-xs text-amber-700">No delivery address set. Add one in Profile.</p>
+              )}
               <div className="mt-3 space-y-2 text-sm">
                 <div className="flex items-center justify-between gap-2"><span>Subtotal</span><span className="text-right">{formatMoney(summary.subtotal)}</span></div>
                 <div className="flex items-center justify-between gap-2"><span>Shipping</span><span className="text-right">{formatMoney(summary.shipping)}</span></div>

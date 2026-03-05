@@ -88,4 +88,11 @@ interface BackendApiService {
         @Header("Authorization") bearerToken: String,
         @Path("productId") productId: String
     )
+
+    @POST("products/{productId}/reviews")
+    suspend fun submitProductReview(
+        @Header("Authorization") bearerToken: String,
+        @Path("productId") productId: String,
+        @Body body: SubmitProductReviewRequest
+    ): SubmitProductReviewResponse
 }

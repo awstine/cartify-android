@@ -24,6 +24,8 @@ export const StoreProductPage = () => {
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [catalogProducts, setCatalogProducts] = useState([]);
+  const [recentlyViewed, setRecentlyViewed] = useState([]);
+  const [lowDataModeEnabled, setLowDataModeEnabled] = useState(false);
 
   const loadProduct = async () => {
     const prefetched = consumePrefetchedGet(`/products/${id}`);
@@ -48,6 +50,37 @@ export const StoreProductPage = () => {
   useEffect(() => {
     loadProduct();
   }, [id]);
+
+  useEffect(() => {
+    let active = true;
+    if (!isAuthenticated) return undefined;
+    api
+      .get("/users/me")
+      .then((response) => {
+        if (!active) return;
+        setLowDataModeEnabled(Boolean(response.data?.preferences?.lowDataModeEnabled));
+      })
+      .catch(() => null);
+    return () => {
+      active = false;
+    };
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    if (!product?._id) return;
+    const key = "cartify_recently_viewed_products";
+    const current = (() => {
+      try {
+        const parsed = JSON.parse(localStorage.getItem(key) || "[]");
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (_err) {
+        return [];
+      }
+    })();
+    const next = [String(product._id), ...current.filter((item) => String(item) !== String(product._id))].slice(0, 12);
+    localStorage.setItem(key, JSON.stringify(next));
+    setRecentlyViewed(next);
+  }, [product?._id]);
 
   useEffect(() => {
     let active = true;
@@ -126,11 +159,16 @@ export const StoreProductPage = () => {
 
   const isOut = Number(product.stockQty || 0) <= 0;
   const imageList = (product.images || []).length > 0 ? product.images : [product.imageUrl].filter(Boolean);
+  const heroImages = lowDataModeEnabled ? imageList.slice(0, 1) : imageList;
   const sameCategoryProducts = catalogProducts.filter(
     (item) => item?._id !== product._id && item?.status !== "draft" && String(item?.category || "") === String(product.category || "")
   );
   const fallbackProducts = catalogProducts.filter((item) => item?._id !== product._id && item?.status !== "draft");
-  const relatedProducts = (sameCategoryProducts.length > 0 ? sameCategoryProducts : fallbackProducts).slice(0, 4);
+  const relatedProducts = (sameCategoryProducts.length > 0 ? sameCategoryProducts : fallbackProducts).slice(0, lowDataModeEnabled ? 2 : 4);
+  const recentlyViewedProducts = catalogProducts
+    .filter((item) => recentlyViewed.includes(String(item._id)) && String(item._id) !== String(product._id))
+    .sort((a, b) => recentlyViewed.indexOf(String(a._id)) - recentlyViewed.indexOf(String(b._id)))
+    .slice(0, lowDataModeEnabled ? 2 : 4);
 
   return (
     <div className="grid gap-6 lg:grid-cols-2">
@@ -139,14 +177,14 @@ export const StoreProductPage = () => {
           {imageList.length > 0 ? (
             <>
               <div className="flex snap-x snap-mandatory overflow-x-auto">
-                {imageList.map((imageUrl, index) => (
+                {heroImages.map((imageUrl, index) => (
                   <div key={`${imageUrl}-${index}`} className="w-full min-w-full snap-start">
                     <img src={imageUrl} alt={`${product.title} image ${index + 1}`} className="h-[360px] w-full object-cover" />
                   </div>
                 ))}
               </div>
-              {imageList.length > 1 ? (
-                <p className="px-4 py-2 text-xs text-slate-500">Scroll right to view more images ({imageList.length}).</p>
+              {heroImages.length > 1 ? (
+                <p className="px-4 py-2 text-xs text-slate-500">Scroll right to view more images ({heroImages.length}).</p>
               ) : null}
             </>
           ) : (
@@ -161,6 +199,12 @@ export const StoreProductPage = () => {
           </Button>
         ) : null}
         <h1 className="font-heading text-2xl font-bold text-slate-900">{product.title}</h1>
+        {product.store?.name ? (
+          <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{product.store.name}</p>
+            <p className="mt-1 text-sm text-slate-700">{product.store.description || "No store description available yet."}</p>
+          </div>
+        ) : null}
         <p className="mt-1 text-sm text-slate-500">{product.category}</p>
         <p className="mt-3 text-2xl font-extrabold text-slate-900">
           {formatMoney(product.salePrice > 0 ? product.salePrice : product.price)}
@@ -260,6 +304,41 @@ export const StoreProductPage = () => {
                 </article>
               );
             })}
+          </div>
+        </section>
+      ) : null}
+
+      {recentlyViewedProducts.length > 0 ? (
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 lg:col-span-2">
+          <div className="flex items-end justify-between gap-2">
+            <h2 className="text-lg font-semibold text-slate-900">Recently Viewed</h2>
+            <p className="text-xs text-slate-500">Continue where you left off</p>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+            {recentlyViewedProducts.map((item) => (
+              <article
+                key={item._id}
+                role="button"
+                tabIndex={0}
+                onClick={() => openRelatedProduct(item._id)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    openRelatedProduct(item._id);
+                  }
+                }}
+                className="cursor-pointer rounded-xl border border-slate-200 p-3 transition hover:border-slate-300"
+              >
+                <div className="aspect-square overflow-hidden rounded-lg bg-slate-100">
+                  {item.imageUrl ? (
+                    <img src={item.imageUrl} alt={item.title} className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-xs text-slate-500">No image</div>
+                  )}
+                </div>
+                <p className="mt-2 truncate text-sm font-semibold text-slate-900">{item.title}</p>
+              </article>
+            ))}
           </div>
         </section>
       ) : null}

@@ -8,6 +8,7 @@ const labels = {
   users: "Customers",
   merchants: "Merchants",
   disputes: "Disputes",
+  growth: "Growth",
   sales: "Sales",
   coupons: "Coupons",
   "audit-logs": "Audit Logs",

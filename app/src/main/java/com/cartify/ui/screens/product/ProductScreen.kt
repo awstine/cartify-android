@@ -1,5 +1,11 @@
 package com.cartify.ui.screens.product
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -47,10 +53,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.cartify.data.model.Product
+import com.cartify.data.repository.CommerceExperienceRepository
 import com.cartify.ui.components.AppBottomSheet
 import com.cartify.ui.components.AppEmptyState
 import com.cartify.ui.components.AppErrorState
@@ -59,12 +71,14 @@ import com.cartify.ui.components.CategoryPill
 import com.cartify.ui.components.ProductImage
 import com.cartify.ui.components.ProductCardSkeleton
 import com.cartify.ui.components.SoftCard
+import com.cartify.ui.components.prefetchImageUrls
 import com.cartify.ui.theme.AppRadius
 import com.cartify.ui.theme.AppSpacing
 import com.cartify.ui.theme.TextSecondary
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import java.util.Locale
+import kotlin.math.abs
 import kotlin.math.min
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -81,8 +95,16 @@ fun ProductScreen(
     productsOverrideError: String? = null,
     onRetryProductsOverride: (() -> Unit)? = null,
     storeModeLabel: String? = null,
-    onBackToMarket: () -> Unit = {}
+    storeModeDescription: String? = null,
+    onBackToMarket: () -> Unit = {},
+    recentlyViewedProducts: List<Product> = emptyList(),
+    recommendedProducts: List<Product> = emptyList(),
+    onSearchQueryTracked: () -> Unit = {}
 ) {
+    val context = LocalContext.current
+    val experienceRepository = remember { CommerceExperienceRepository(context) }
+    val lowDataMode by experienceRepository.lowDataMode.collectAsState()
+    val featureFlags by experienceRepository.featureFlags.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
     var showGuestSheet by remember { mutableStateOf(false) }
     val hasOverride = productsOverride != null
@@ -106,38 +128,69 @@ fun ProductScreen(
             }
         }
     }
-    val homeCategories = remember(scopedProducts) {
-        val base = scopedProducts
-            .map { it.category.trim() }
-            .filter { it.isNotBlank() }
-            .distinctBy { it.lowercase(Locale.getDefault()) }
-            .sortedBy { it.lowercase(Locale.getDefault()) }
-        listOf("All") + base
+    val homeCategories = remember(hasOverride, scopedProducts, uiState.products.size) {
+        if (!hasOverride) {
+            viewModel.allCategories()
+        } else {
+            val base = scopedProducts
+                .map { it.category.trim() }
+                .filter { it.isNotBlank() }
+                .distinctBy { it.lowercase(Locale.getDefault()) }
+                .sortedBy { it.lowercase(Locale.getDefault()) }
+            listOf("All") + base
+        }
     }
-    val heroProducts = scopedProducts.take(8)
+    var inStockOnly by remember { mutableStateOf(false) }
+    var minRating by remember { mutableStateOf(0) }
+    var maxPriceInput by remember { mutableStateOf("") }
+    val displayProducts = remember(scopedProducts, inStockOnly, minRating, maxPriceInput) {
+        val cap = maxPriceInput.toDoubleOrNull()
+        scopedProducts.filter { product ->
+            (!inStockOnly || product.stock > 0) &&
+                ((product.rating?.rate ?: 0.0) >= minRating.toDouble()) &&
+                (cap == null || product.price <= cap)
+        }
+    }
+    val selectedCategoryIndex = homeCategories.indexOfFirst {
+        it.equals(uiState.selectedCategory, ignoreCase = true)
+    }
+    val heroDisplayProducts = displayProducts.take(if (lowDataMode) 4 else 8)
     val heroListState = rememberLazyListState()
+    val categoryListState = rememberLazyListState()
     val productFeedListState = rememberLazyListState()
     var visibleCount by remember(
         uiState.searchQuery,
         uiState.selectedCategory,
         uiState.selectedSort,
-        scopedProducts.size
+        displayProducts.size
     ) { mutableStateOf(12) }
-    val visibleProducts = remember(scopedProducts, visibleCount) {
-        scopedProducts.take(visibleCount.coerceAtLeast(1))
+    val visibleProducts = remember(displayProducts, visibleCount) {
+        displayProducts.take(visibleCount.coerceAtLeast(1))
     }
     val pullToRefreshState = rememberPullToRefreshState()
+    var categorySwipeDirection by remember { mutableStateOf(1) }
 
-    LaunchedEffect(heroProducts.size) {
-        if (heroProducts.size <= 1) return@LaunchedEffect
+    LaunchedEffect(heroDisplayProducts.size, lowDataMode) {
+        if (lowDataMode) return@LaunchedEffect
+        if (heroDisplayProducts.size <= 1) return@LaunchedEffect
         while (isActive) {
             delay(4000)
-            val atLast = heroListState.firstVisibleItemIndex >= heroProducts.lastIndex
+            val atLast = heroListState.firstVisibleItemIndex >= heroDisplayProducts.lastIndex
             if (atLast) {
                 heroListState.scrollToItem(0)
             } else {
                 heroListState.animateScrollToItem(heroListState.firstVisibleItemIndex + 1)
             }
+        }
+    }
+    LaunchedEffect(visibleProducts, heroDisplayProducts, recommendedProducts) {
+        val prefetch = (heroDisplayProducts + visibleProducts.take(8) + recommendedProducts.take(6))
+            .flatMap { product -> product.imageUrls + listOf(product.imageUrl) }
+        prefetchImageUrls(context, prefetch)
+    }
+    LaunchedEffect(selectedCategoryIndex, homeCategories.size) {
+        if (selectedCategoryIndex >= 0 && selectedCategoryIndex < homeCategories.size) {
+            categoryListState.animateScrollToItem(index = selectedCategoryIndex)
         }
     }
 
@@ -163,7 +216,33 @@ fun ProductScreen(
                 else -> {
                     LazyColumn(
                         state = productFeedListState,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .pointerInput(homeCategories, selectedCategoryIndex) {
+                                var totalHorizontalDrag = 0f
+                                detectHorizontalDragGestures(
+                                    onHorizontalDrag = { _, dragAmount ->
+                                        totalHorizontalDrag += dragAmount
+                                    },
+                                    onDragEnd = {
+                                        val thresholdPx = 80f
+                                        if (abs(totalHorizontalDrag) >= thresholdPx && selectedCategoryIndex >= 0) {
+                                            val nextIndex = nextCategoryIndex(
+                                                currentIndex = selectedCategoryIndex,
+                                                lastIndex = homeCategories.lastIndex,
+                                                totalHorizontalDrag = totalHorizontalDrag,
+                                                thresholdPx = thresholdPx
+                                            )
+                                            if (nextIndex != selectedCategoryIndex) {
+                                                categorySwipeDirection = if (nextIndex > selectedCategoryIndex) 1 else -1
+                                                viewModel.onCategorySelected(homeCategories[nextIndex])
+                                            }
+                                        }
+                                        totalHorizontalDrag = 0f
+                                    },
+                                    onDragCancel = { totalHorizontalDrag = 0f }
+                                )
+                            },
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                         contentPadding = PaddingValues(bottom = 72.dp)
                     ) {
@@ -177,8 +256,13 @@ fun ProductScreen(
                             ) {
                                 OutlinedTextField(
                                     value = uiState.searchQuery,
-                                    onValueChange = viewModel::onSearchQueryChanged,
-                                    modifier = Modifier.fillMaxWidth(),
+                                    onValueChange = {
+                                        viewModel.onSearchQueryChanged(it)
+                                        if (it.isNotBlank()) onSearchQueryTracked()
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(52.dp),
                                     singleLine = true,
                                     placeholder = {
                                         Text(
@@ -210,6 +294,39 @@ fun ProductScreen(
                                         )
                                     }
                                 }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    CategoryPill(
+                                        text = if (inStockOnly) "In-stock only" else "All stock",
+                                        selected = inStockOnly,
+                                        onClick = { inStockOnly = !inStockOnly }
+                                    )
+                                    CategoryPill(
+                                        text = "Rating ${minRating}+",
+                                        selected = minRating > 0,
+                                        onClick = { minRating = if (minRating >= 4) 0 else minRating + 1 }
+                                    )
+                                    OutlinedTextField(
+                                        value = maxPriceInput,
+                                        onValueChange = { maxPriceInput = it.filter { ch -> ch.isDigit() || ch == '.' } },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(52.dp),
+                                        singleLine = true,
+                                        placeholder = { Text("Max price") },
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                        shape = RoundedCornerShape(10.dp),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedContainerColor = MaterialTheme.colorScheme.surface,
+                                            unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                                            focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
+                                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
+                                        )
+                                    )
+                                }
                                 if (!storeModeLabel.isNullOrBlank()) {
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
@@ -226,11 +343,18 @@ fun ProductScreen(
                                             Text("Back to market")
                                         }
                                     }
+                                    if (!storeModeDescription.isNullOrBlank()) {
+                                        Text(
+                                            storeModeDescription,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                 }
                             }
                         }
 
-                        if (scopedProducts.isNotEmpty()) {
+                        if (heroDisplayProducts.isNotEmpty()) {
                             item {
                                 LazyRow(
                                     state = heroListState,
@@ -240,7 +364,7 @@ fun ProductScreen(
                                     contentPadding = PaddingValues(horizontal = 12.dp),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    items(heroProducts, key = { it.id }) { hero ->
+                                    items(heroDisplayProducts, key = { it.id }) { hero ->
                                         HeroProductCard(
                                             product = hero,
                                             onProductClick = { onProductClick(hero.id) }
@@ -252,6 +376,7 @@ fun ProductScreen(
 
                         item {
                             LazyRow(
+                                state = categoryListState,
                                 modifier = Modifier.fillMaxWidth(),
                                 contentPadding = PaddingValues(horizontal = 12.dp),
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -260,50 +385,101 @@ fun ProductScreen(
                                     CategoryPill(
                                         text = categoryLabel(category),
                                         selected = uiState.selectedCategory.equals(category, true),
-                                        onClick = { viewModel.onCategorySelected(category) }
+                                        onClick = {
+                                            val tappedIndex = homeCategories.indexOfFirst { it.equals(category, ignoreCase = true) }
+                                            if (tappedIndex >= 0 && selectedCategoryIndex >= 0) {
+                                                categorySwipeDirection = if (tappedIndex > selectedCategoryIndex) 1 else -1
+                                            }
+                                            viewModel.onCategorySelected(category)
+                                        }
                                     )
                                 }
                             }
                         }
 
-                        if (scopedProducts.isEmpty()) {
-                            item { AppEmptyState("No products", "Try another category or search.") }
-                        } else {
-                            val rows = visibleProducts.chunked(2)
-                            items(rows) { rowProducts ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp),
+                        if (recentlyViewedProducts.isNotEmpty()) {
+                            item {
+                                Text(
+                                    "Recently viewed",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 12.dp)
+                                )
+                            }
+                            item {
+                                LazyRow(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    contentPadding = PaddingValues(horizontal = 12.dp),
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    rowProducts.forEach { product ->
-                                        HomeProductCard(
-                                            product = product,
-                                            onClick = { onProductClick(product.id) },
-                                            modifier = Modifier.weight(1f)
+                                    items(recentlyViewedProducts.take(8), key = { it.id }) { viewed ->
+                                        HeroProductCard(
+                                            product = viewed,
+                                            onProductClick = { onProductClick(viewed.id) }
                                         )
-                                    }
-                                    if (rowProducts.size == 1) {
-                                        Spacer(modifier = Modifier.weight(1f))
                                     }
                                 }
                             }
+                        }
 
-                            if (visibleCount < scopedProducts.size) {
-                                item(key = "load-more-trigger") {
-                                    LaunchedEffect(visibleCount, scopedProducts.size) {
-                                        visibleCount = min(visibleCount + 10, scopedProducts.size)
+                        if (featureFlags.recommendationsEnabled && recommendedProducts.isNotEmpty()) {
+                            item {
+                                Text(
+                                    "Recommended for you",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 12.dp)
+                                )
+                            }
+                            item {
+                                LazyRow(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    contentPadding = PaddingValues(horizontal = 12.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    items(recommendedProducts.take(8), key = { it.id }) { recommended ->
+                                        HeroProductCard(
+                                            product = recommended,
+                                            onProductClick = { onProductClick(recommended.id) }
+                                        )
                                     }
-                                    Text(
-                                        "Loading more products...",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                                }
+                            }
+                        }
+
+                        item {
+                            if (featureFlags.smoothCategoryAnimationEnabled) {
+                                AnimatedContent(
+                                    targetState = uiState.selectedCategory,
+                                    transitionSpec = {
+                                        if (categorySwipeDirection >= 0) {
+                                            (slideInHorizontally { width -> width / 3 } + fadeIn()) togetherWith
+                                                (slideOutHorizontally { width -> -width / 3 } + fadeOut())
+                                        } else {
+                                            (slideInHorizontally { width -> -width / 3 } + fadeIn()) togetherWith
+                                                (slideOutHorizontally { width -> width / 3 } + fadeOut())
+                                        }
+                                    },
+                                    label = "category-products-transition"
+                                ) {
+                                    ProductGridContent(
+                                        displayProducts = displayProducts,
+                                        visibleProducts = visibleProducts,
+                                        visibleCount = visibleCount,
+                                        selectedCategory = uiState.selectedCategory,
+                                        onProductClick = onProductClick,
+                                        onLoadMore = { visibleCount = min(visibleCount + 10, displayProducts.size) }
                                     )
                                 }
+                            } else {
+                                ProductGridContent(
+                                    displayProducts = displayProducts,
+                                    visibleProducts = visibleProducts,
+                                    visibleCount = visibleCount,
+                                    selectedCategory = uiState.selectedCategory,
+                                    onProductClick = onProductClick,
+                                    onLoadMore = { visibleCount = min(visibleCount + 10, displayProducts.size) }
+                                )
                             }
                         }
                     }
@@ -385,7 +561,8 @@ private fun LoadingState() {
 private fun HeroProductCard(product: Product, onProductClick: () -> Unit) {
     Card(
         modifier = Modifier
-            .width(304.dp),
+            .width(304.dp)
+            .clickable(onClick = onProductClick),
         shape = RoundedCornerShape(1.5.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
@@ -405,9 +582,13 @@ private fun HeroProductCard(product: Product, onProductClick: () -> Unit) {
                 Text(product.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    if (product.stock > 0) "Stock: ${product.stock}" else "Out of stock",
+                    stockUrgencyLabel(product.stock),
                     style = MaterialTheme.typography.labelMedium,
-                    color = if (product.stock > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                    color = when {
+                        product.stock <= 0 -> MaterialTheme.colorScheme.error
+                        product.stock <= 5 -> MaterialTheme.colorScheme.tertiary
+                        else -> MaterialTheme.colorScheme.primary
+                    },
                     fontWeight = FontWeight.SemiBold
                 )
                 Spacer(modifier = Modifier.height(4.dp))
@@ -418,7 +599,13 @@ private fun HeroProductCard(product: Product, onProductClick: () -> Unit) {
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
-                TextButton(onClick = onProductClick) { Text("Show more") }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "KSh ${"%.2f".format(product.price)}",
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleSmall
+                )
             }
         }
     }
@@ -457,8 +644,12 @@ private fun HomeProductCard(
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                if (product.stock > 0) "Stock: ${product.stock}" else "Out of stock",
-                color = if (product.stock > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                stockUrgencyLabel(product.stock),
+                color = when {
+                    product.stock <= 0 -> MaterialTheme.colorScheme.error
+                    product.stock <= 5 -> MaterialTheme.colorScheme.tertiary
+                    else -> MaterialTheme.colorScheme.primary
+                },
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.SemiBold
             )
@@ -513,4 +704,59 @@ private fun previewDescription(text: String, maxWords: Int = 20): String {
     val words = text.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
     if (words.size <= maxWords) return words.joinToString(" ")
     return words.take(maxWords).joinToString(" ") + "..."
+}
+
+@Composable
+private fun ProductGridContent(
+    displayProducts: List<Product>,
+    visibleProducts: List<Product>,
+    visibleCount: Int,
+    selectedCategory: String,
+    onProductClick: (Int) -> Unit,
+    onLoadMore: () -> Unit
+) {
+    if (displayProducts.isEmpty()) {
+        AppEmptyState("No products", "Try another category or search.")
+    } else {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            visibleProducts.chunked(2).forEach { rowProducts ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    rowProducts.forEach { product ->
+                        HomeProductCard(
+                            product = product,
+                            onClick = { onProductClick(product.id) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    if (rowProducts.size == 1) {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+            if (visibleCount < displayProducts.size) {
+                LaunchedEffect(visibleCount, displayProducts.size, selectedCategory) { onLoadMore() }
+                Text(
+                    "Loading more products...",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                )
+            }
+        }
+    }
+}
+
+private fun stockUrgencyLabel(stock: Int): String {
+    return when {
+        stock <= 0 -> "Out of stock"
+        stock <= 5 -> "Hurry! only $stock left"
+        else -> "Stock: $stock"
+    }
 }

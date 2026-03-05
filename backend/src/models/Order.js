@@ -60,6 +60,19 @@ const orderSchema = new mongoose.Schema(
       enum: ["placed", "processing", "shipped", "delivered", "cancelled"],
       default: "placed",
     },
+    returnRefundRequest: {
+      requested: { type: Boolean, default: false },
+      type: { type: String, enum: ["return", "refund", ""], default: "" },
+      reason: { type: String, default: "" },
+      details: { type: String, default: "" },
+      status: {
+        type: String,
+        enum: ["none", "requested", "in_review", "approved", "rejected", "completed"],
+        default: "none",
+      },
+      requestedAt: { type: Date, required: false },
+      updatedAt: { type: Date, required: false },
+    },
   },
   { timestamps: true }
 );

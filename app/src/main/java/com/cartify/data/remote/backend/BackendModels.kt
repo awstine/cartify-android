@@ -157,3 +157,21 @@ data class BackendStore(
     val logoUrl: String? = null,
     val isActive: Boolean = true
 )
+
+data class SubmitProductReviewRequest(
+    val rating: Int,
+    val comment: String
+)
+
+data class ProductReviewPayload(
+    val userId: String? = null,
+    val userName: String? = null,
+    val rating: Int,
+    val comment: String,
+    val createdAt: String
+)
+
+data class SubmitProductReviewResponse(
+    val message: String,
+    val reviews: List<ProductReviewPayload> = emptyList()
+)

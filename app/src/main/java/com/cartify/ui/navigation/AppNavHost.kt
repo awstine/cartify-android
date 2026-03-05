@@ -51,6 +51,7 @@ import com.cartify.data.model.Product
 import com.cartify.data.remote.backend.ClientCheckoutItem
 import com.cartify.data.remote.backend.BackendStore
 import com.cartify.data.repository.BackendRepository
+import com.cartify.data.repository.CommerceExperienceRepository
 import com.cartify.data.repository.toUiProductsForStore
 import com.cartify.ui.components.AppPrimaryButton
 import com.cartify.ui.components.ProductImage
@@ -67,6 +68,7 @@ import com.cartify.ui.screens.checkout.CheckoutScreen
 import com.cartify.ui.screens.more.AboutScreen
 import com.cartify.ui.screens.more.CategoriesScreen
 import com.cartify.ui.screens.more.HelpScreen
+import com.cartify.ui.screens.more.OrderDetailsScreen
 import com.cartify.ui.screens.more.OffersScreen
 import com.cartify.ui.screens.more.OrdersScreen
 import com.cartify.ui.screens.more.ProfileScreen
@@ -90,6 +92,7 @@ fun AppNavHost(
     onDarkModeChanged: (Boolean) -> Unit
 ) {
     val app = LocalContext.current.applicationContext as android.app.Application
+    val context = LocalContext.current
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
@@ -103,18 +106,23 @@ fun AppNavHost(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val backendRepository = remember { BackendRepository() }
+    val commerceRepository = remember(context) { CommerceExperienceRepository(context) }
+    val recentlyViewedIds by commerceRepository.recentlyViewed.collectAsState()
+    val moderationState by commerceRepository.moderationState.collectAsState()
     var wishlistProductIds by remember { mutableStateOf(setOf<String>()) }
     var stores by remember { mutableStateOf<List<BackendStore>>(emptyList()) }
     var storesLoading by remember { mutableStateOf(false) }
     var storesError by remember { mutableStateOf<String?>(null) }
     var currentStoreSlug by remember { mutableStateOf<String?>(null) }
     var currentStoreName by remember { mutableStateOf<String?>(null) }
+    var currentStoreDescription by remember { mutableStateOf<String?>(null) }
     var storeModeProducts by remember { mutableStateOf<List<Product>>(emptyList()) }
     var storeModeLoading by remember { mutableStateOf(false) }
     var storeModeError by remember { mutableStateOf<String?>(null) }
     var openingStore by remember { mutableStateOf(false) }
-    val scopedProducts = remember(productUiState.products, currentStoreSlug, storeModeProducts) {
-        if (currentStoreSlug.isNullOrBlank()) productUiState.products else storeModeProducts
+    val scopedProducts = remember(productUiState.products, currentStoreSlug, storeModeProducts, moderationState.blockedProductIds) {
+        val base = if (currentStoreSlug.isNullOrBlank()) productUiState.products else storeModeProducts
+        base.filterNot { product -> commerceRepository.isProductBlocked(product.id) }
     }
     val scopedCategories = remember(scopedProducts) {
         val base = scopedProducts
@@ -138,6 +146,17 @@ fun AppNavHost(
                     .orEmpty()
             }
     }
+    val recentlyViewedProducts = remember(scopedProducts, productUiState.products, recentlyViewedIds) {
+        val index = (scopedProducts + productUiState.products).associateBy { it.id }
+        recentlyViewedIds.mapNotNull { id -> index[id] }.distinctBy { it.id }
+    }
+    val recommendedProducts = remember(scopedProducts, recentlyViewedProducts) {
+        val viewedCategories = recentlyViewedProducts.map { it.category.lowercase() }.toSet()
+        scopedProducts
+            .filter { it.category.lowercase() in viewedCategories }
+            .filter { product -> recentlyViewedProducts.none { viewed -> viewed.id == product.id } }
+            .take(10)
+    }
 
     fun loadStores() {
         scope.launch {
@@ -153,6 +172,7 @@ fun AppNavHost(
     fun clearStoreMode() {
         currentStoreSlug = null
         currentStoreName = null
+        currentStoreDescription = null
         storeModeProducts = emptyList()
         storeModeError = null
         storeModeLoading = false
@@ -241,7 +261,8 @@ fun AppNavHost(
         NavigationItem.Help.route,
         NavigationItem.About.route,
         NavigationItem.Checkout.route,
-        NavigationItem.CheckoutSuccess.route
+        NavigationItem.CheckoutSuccess.route,
+        "order_details"
     )
     val showMainShell = mainRoutes.any { route ->
         currentRoute == route ||
@@ -261,6 +282,7 @@ fun AppNavHost(
                 val product = productId?.let { productViewModel.productById(it) }
                 if (product != null) {
                     if (product.stock > 0) {
+                        commerceRepository.trackAddToCartAttempt()
                         productViewModel.addToCart(product)
                     } else {
                         snackbarHostState.showSnackbar("Out of stock")
@@ -277,6 +299,7 @@ fun AppNavHost(
                 if (backendId.isNotBlank() && token.isNotBlank()) {
                     runCatching { backendRepository.addToWishlist(token, backendId) }
                         .onSuccess {
+                            commerceRepository.trackWishlistAdd()
                             wishlistProductIds = wishlistProductIds + backendId
                             snackbarHostState.showSnackbar("Added to wishlist")
                         }
@@ -374,7 +397,10 @@ fun AppNavHost(
             composable(NavigationItem.Products.route) {
                 ProductScreen(
                     viewModel = productViewModel,
-                    onProductClick = { productId -> navController.navigate("product_details/$productId") },
+                    onProductClick = { productId ->
+                        commerceRepository.trackProductView(productId)
+                        navController.navigate("product_details/$productId")
+                    },
                     onCartClick = { navigateWithPrefetch(NavigationItem.Cart.route) },
                     onAddToCartAttempt = { product ->
                         authViewModel.requireAuth(
@@ -383,6 +409,7 @@ fun AppNavHost(
                             payload = PendingActionPayload(productId = product.id, quantity = 1)
                         ) {
                             if (product.stock > 0) {
+                                commerceRepository.trackAddToCartAttempt()
                                 productViewModel.addToCart(product)
                             } else {
                                 scope.launch { snackbarHostState.showSnackbar("Out of stock") }
@@ -399,7 +426,11 @@ fun AppNavHost(
                         if (slug.isNotBlank()) scope.launch { loadStoreProductsBySlug(slug) }
                     },
                     storeModeLabel = currentStoreName,
-                    onBackToMarket = ::clearStoreMode
+                    storeModeDescription = currentStoreDescription,
+                    onBackToMarket = ::clearStoreMode,
+                    recentlyViewedProducts = recentlyViewedProducts,
+                    recommendedProducts = recommendedProducts,
+                    onSearchQueryTracked = { commerceRepository.trackSearch() }
                 )
             }
             composable(NavigationItem.Categories.route) {
@@ -428,6 +459,8 @@ fun AppNavHost(
                             openingStore = true
                             currentStoreSlug = store.slug
                             currentStoreName = store.name
+                            currentStoreDescription = store.description
+                            commerceRepository.trackStoreVisit()
                             val loaded = loadStoreProductsBySlug(store.slug)
                             if (loaded) {
                                 openingStore = false
@@ -450,6 +483,7 @@ fun AppNavHost(
                         onProductClick = { backendProductId ->
                             productViewModel.productByBackendId(backendProductId)?.let { product ->
                                 navController.navigate("product_details/${product.id}") { launchSingleTop = true }
+                                commerceRepository.trackProductView(product.id)
                             }
                         },
                         onWishlistChanged = { ids -> wishlistProductIds = ids }
@@ -461,9 +495,11 @@ fun AppNavHost(
                         products = scopedProducts,
                         onProductClick = { productId ->
                             navController.navigate("product_details/$productId") { launchSingleTop = true }
+                            commerceRepository.trackProductView(productId)
                         },
                         onAddToCart = { product ->
                             if (product.stock > 0) {
+                                commerceRepository.trackAddToCartAttempt()
                                 productViewModel.addToCart(product)
                             } else {
                                 scope.launch { snackbarHostState.showSnackbar("Out of stock") }
@@ -483,6 +519,7 @@ fun AppNavHost(
                         navController.navigate("product_details/$productId") {
                             launchSingleTop = true
                         }
+                        commerceRepository.trackProductView(productId)
                     }
                 )
             }
@@ -524,6 +561,7 @@ fun AppNavHost(
                     products = scopedProducts,
                     onProductClick = { productId ->
                         navController.navigate("product_details/$productId") { launchSingleTop = true }
+                        commerceRepository.trackProductView(productId)
                     },
                     onLoginRequested = { navController.navigate(NavigationItem.Login.route) { launchSingleTop = true } },
                     onOpenSettings = { navigateWithPrefetch(NavigationItem.Settings.route) },
@@ -540,7 +578,12 @@ fun AppNavHost(
             }
             composable(NavigationItem.Orders.route) {
                 if (isLoggedIn) {
-                    OrdersScreen(token = session.token)
+                    OrdersScreen(
+                        token = session.token,
+                        onOpenOrderDetails = { orderId ->
+                            navController.navigate("order_details/$orderId") { launchSingleTop = true }
+                        }
+                    )
                 } else {
                     AuthRequiredScreen(
                         title = "Sign in to view orders",
@@ -567,8 +610,33 @@ fun AppNavHost(
                     )
                 }
             }
+            composable(
+                route = "order_details/{orderId}",
+                arguments = listOf(navArgument("orderId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val orderId = backStackEntry.arguments?.getString("orderId").orEmpty()
+                OrderDetailsScreen(
+                    token = session.token,
+                    orderId = orderId,
+                    onBack = { navController.popBackStack() },
+                    onReorder = { order ->
+                        order.items.forEach { item ->
+                            val backendId = item.productId?.trim().orEmpty()
+                            if (backendId.isNotBlank()) {
+                                productViewModel.productByBackendId(backendId)?.let { product ->
+                                    if (product.stock > 0) {
+                                        productViewModel.addToCart(product)
+                                    }
+                                }
+                            }
+                        }
+                        scope.launch { snackbarHostState.showSnackbar("Items added to cart") }
+                        navigateWithPrefetch(NavigationItem.Cart.route)
+                    }
+                )
+            }
             composable(NavigationItem.Offers.route) { OffersScreen() }
-            composable(NavigationItem.Settings.route) { SettingsScreen() }
+            composable(NavigationItem.Settings.route) { SettingsScreen(token = session.token) }
             composable(NavigationItem.Help.route) { HelpScreen() }
             composable(NavigationItem.About.route) { AboutScreen() }
             composable(
@@ -598,6 +666,7 @@ fun AppNavHost(
                         isPlacingOrder = isPlacingOrder,
                         orderError = checkoutError,
                         onProceedCheckout = {
+                            commerceRepository.trackCheckoutStart()
                             val token = session.token
                             if (token.isNullOrBlank()) {
                                 checkoutError = "Session expired. Please sign in again."
@@ -621,6 +690,7 @@ fun AppNavHost(
                                     scope.launch {
                                         runCatching { backendRepository.checkoutFromClient(token, checkoutItems) }
                                             .onSuccess {
+                                                commerceRepository.trackCheckoutSuccess()
                                                 cartViewModel.clearCart()
                                                 navController.navigate(NavigationItem.CheckoutSuccess.route) {
                                                     launchSingleTop = true
@@ -679,6 +749,7 @@ fun AppNavHost(
                         ?.let { productViewModel.relatedProducts(it, limit = 10) }
                         ?.filter { currentStoreSlug.isNullOrBlank() || it.storeSlug == currentStoreSlug }
                         ?: emptyList(),
+                    productReviews = selectedProduct?.let { commerceRepository.reviewsForProduct(it.id) } ?: emptyList(),
                     isFavorite = selectedProduct?.backendId?.let { wishlistProductIds.contains(it) } == true,
                     onToggleFavorite = {
                         if (productId != null) {
@@ -706,6 +777,7 @@ fun AppNavHost(
                                         } else {
                                             runCatching { backendRepository.addToWishlist(token, backendId) }
                                                 .onSuccess {
+                                                    commerceRepository.trackWishlistAdd()
                                                     wishlistProductIds = wishlistProductIds + backendId
                                                     snackbarHostState.showSnackbar("Added to wishlist")
                                                 }
@@ -726,6 +798,7 @@ fun AppNavHost(
                         if (product.stock <= 0) {
                             scope.launch { snackbarHostState.showSnackbar("Out of stock") }
                         } else {
+                            commerceRepository.trackAddToCartAttempt()
                             productViewModel.addToCart(product)
                         }
                     },
@@ -737,6 +810,7 @@ fun AppNavHost(
                                 actionName = "OPEN_CHECKOUT",
                                 returnRoute = "product_details/${product.id}"
                             ) {
+                                commerceRepository.trackCheckoutStart()
                                 productViewModel.addToCart(product)
                                 val subtotal = product.price
                                 val shipping = if (subtotal > 0) 6.99 else 0.0
@@ -752,14 +826,41 @@ fun AppNavHost(
                             if (!allowed) navController.navigate(NavigationItem.Login.route) { launchSingleTop = true }
                         }
                     },
-                    onSubmitReview = { product, stars ->
+                    onSubmitReview = { product, stars, comment ->
                         productViewModel.submitReview(product.id, stars)
-                        scope.launch { snackbarHostState.showSnackbar("Review submitted") }
+                        val token = session.token?.trim().orEmpty()
+                        val backendId = product.backendId.trim()
+                        if (token.isNotBlank() && backendId.isNotBlank()) {
+                            scope.launch {
+                                runCatching {
+                                    backendRepository.submitProductReview(
+                                        token = token,
+                                        productId = backendId,
+                                        rating = stars,
+                                        comment = comment
+                                    )
+                                }.onSuccess {
+                                    commerceRepository.addReview(product.id, stars, comment)
+                                    snackbarHostState.showSnackbar("Review submitted")
+                                }.onFailure {
+                                    commerceRepository.addReview(product.id, stars, comment)
+                                    snackbarHostState.showSnackbar("Saved locally. Sync to server failed.")
+                                }
+                            }
+                        } else {
+                            commerceRepository.addReview(product.id, stars, comment)
+                            scope.launch { snackbarHostState.showSnackbar("Review saved") }
+                        }
+                    },
+                    onReportReview = { review ->
+                        commerceRepository.reportReview("${review.productId}-${review.createdAtMs}")
+                        scope.launch { snackbarHostState.showSnackbar("Review flagged for moderation") }
                     },
                     onRelatedProductClick = { relatedId ->
                         navController.navigate("product_details/$relatedId") {
                             launchSingleTop = true
                         }
+                        commerceRepository.trackProductView(relatedId)
                     }
                 )
             }

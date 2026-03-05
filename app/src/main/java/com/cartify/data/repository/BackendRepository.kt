@@ -14,6 +14,8 @@ import com.cartify.data.remote.backend.ClientCheckoutItem
 import com.cartify.data.remote.backend.ClientCheckoutRequest
 import com.cartify.data.remote.backend.DeleteAccountResponse
 import com.cartify.data.remote.backend.SignUpRequest
+import com.cartify.data.remote.backend.SubmitProductReviewRequest
+import com.cartify.data.remote.backend.SubmitProductReviewResponse
 import com.cartify.data.remote.backend.UpdateProfileRequest
 import com.cartify.data.remote.backend.UserProfileResponse
 import com.cartify.data.remote.backend.UserPreferences
@@ -31,6 +33,8 @@ class BackendRepository {
         private val ordersCache = mutableMapOf<String, CacheEntry<List<BackendOrder>>>()
         private val profileCache = mutableMapOf<String, CacheEntry<UserProfileResponse>>()
         private val cartCache = mutableMapOf<String, CacheEntry<CartResponse>>()
+        private val productsCache = mutableMapOf<String, CacheEntry<List<BackendProduct>>>()
+        private var storesCache: CacheEntry<List<BackendStore>>? = null
     }
 
     private data class CacheEntry<T>(
@@ -45,6 +49,8 @@ class BackendRepository {
         return if (nowMs() - entry.timestampMs <= CACHE_TTL_MS) entry.value else null
     }
 
+    private fun <T> readStaleCache(entry: CacheEntry<T>?): T? = entry?.value
+
     suspend fun signUp(name: String, email: String, password: String): AuthResponse {
         return BackendRetrofitInstance.api.signUp(SignUpRequest(name, email, password))
     }
@@ -54,18 +60,29 @@ class BackendRepository {
     }
 
     suspend fun getProducts(storeSlug: String? = null): List<BackendProduct> {
-        return BackendRetrofitInstance.api.getProducts(storeSlug = storeSlug)
+        val key = storeSlug?.trim().orEmpty().ifBlank { "__all__" }
+        val stale = readStaleCache(productsCache[key])
+        return runCatching { BackendRetrofitInstance.api.getProducts(storeSlug = storeSlug) }
+            .onSuccess { productsCache[key] = CacheEntry(it, nowMs()) }
+            .getOrElse { throwable ->
+                stale ?: throw throwable
+            }
     }
 
     suspend fun getStores(): List<BackendStore> {
+        val stale = readStaleCache(storesCache)
         return try {
             BackendRetrofitInstance.api.getStores()
+                .also { storesCache = CacheEntry(it, nowMs()) }
         } catch (http: HttpException) {
             if (http.code() == 404) {
                 BackendRetrofitInstance.api.getStoresFromApiRoot()
+                    .also { storesCache = CacheEntry(it, nowMs()) }
             } else {
-                throw http
+                stale ?: throw http
             }
+        } catch (t: Throwable) {
+            stale ?: throw t
         }
     }
 
@@ -158,6 +175,22 @@ class BackendRepository {
     suspend fun removeWishlistItem(token: String, productId: String) {
         BackendRetrofitInstance.api.removeWishlistItem(bearer(token), productId)
         wishlistCache.remove(token)
+    }
+
+    suspend fun submitProductReview(
+        token: String,
+        productId: String,
+        rating: Int,
+        comment: String
+    ): SubmitProductReviewResponse {
+        return BackendRetrofitInstance.api.submitProductReview(
+            bearer(token),
+            productId,
+            SubmitProductReviewRequest(
+                rating = rating.coerceIn(1, 5),
+                comment = comment.trim()
+            )
+        )
     }
 
     suspend fun prefetchForRoute(token: String, route: String) {

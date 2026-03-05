@@ -22,6 +22,7 @@ class ProductRepository(
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
     private val backendRepository = BackendRepository()
+    private var lastSuccessfulProducts: List<Product> = emptyList()
 
     private val _productsState = MutableStateFlow<ProductDataState>(ProductDataState.Loading)
 
@@ -36,12 +37,18 @@ class ProductRepository(
             _productsState.value = ProductDataState.Loading
             runCatching { backendRepository.getProducts() }
                 .onSuccess { products ->
-                    _productsState.value = ProductDataState.Success(products.toUiProducts())
+                    val uiProducts = products.toUiProducts()
+                    lastSuccessfulProducts = uiProducts
+                    _productsState.value = ProductDataState.Success(uiProducts)
                 }
                 .onFailure { throwable ->
-                    _productsState.value = ProductDataState.Error(
-                        throwable.message ?: "Unable to load products"
-                    )
+                    _productsState.value = if (lastSuccessfulProducts.isNotEmpty()) {
+                        ProductDataState.Success(lastSuccessfulProducts)
+                    } else {
+                        ProductDataState.Error(
+                            throwable.message ?: "Unable to load products"
+                        )
+                    }
                 }
         }
     }

@@ -38,6 +38,9 @@ export const StoreHomePage = () => {
   const loadMoreRef = useRef(null);
   const search = (searchParams.get("search") || "").toLowerCase();
   const category = searchParams.get("category") || "all";
+  const inStockOnly = String(searchParams.get("inStock") || "").toLowerCase() === "true";
+  const minRating = Number(searchParams.get("minRating") || 0);
+  const maxPrice = Number(searchParams.get("maxPrice") || 0);
   const selectedStoreSlug = storeSlug || searchParams.get("store") || "all";
 
   useEffect(() => {
@@ -58,7 +61,14 @@ export const StoreHomePage = () => {
 
   useEffect(() => {
     const loadProducts = async () => {
-      const productParams = selectedStoreSlug !== "all" ? { storeSlug: selectedStoreSlug } : undefined;
+      const productParams = {
+        ...(selectedStoreSlug !== "all" ? { storeSlug: selectedStoreSlug } : {}),
+        ...(category !== "all" ? { category } : {}),
+        ...(search ? { search } : {}),
+        ...(inStockOnly ? { inStock: true } : {}),
+        ...(minRating > 0 ? { minRating } : {}),
+        ...(maxPrice > 0 ? { maxPrice } : {}),
+      };
       const prefetched = consumePrefetchedGet("/products", { params: productParams });
       if (prefetched) {
         setProducts(prefetched || []);
@@ -77,7 +87,7 @@ export const StoreHomePage = () => {
       }
     };
     loadProducts();
-  }, [selectedStoreSlug]);
+  }, [selectedStoreSlug, category, search, inStockOnly, minRating, maxPrice]);
 
   const categories = useMemo(
     () => ["all", ...new Set(products.map((product) => String(product.category || "general")))],
@@ -93,10 +103,51 @@ export const StoreHomePage = () => {
       }),
     [products, search, category]
   );
+  const maxPriceOptions = useMemo(() => {
+    const prices = products
+      .map((product) => Number(product.salePrice > 0 ? product.salePrice : product.price || 0))
+      .filter((value) => value > 0)
+      .sort((a, b) => a - b);
+    if (prices.length === 0) {
+      return maxPrice > 0 ? [maxPrice] : [];
+    }
+
+    const toNiceStep = (value) => {
+      if (value >= 10000) return Math.round(value / 500) * 500;
+      if (value >= 1000) return Math.round(value / 100) * 100;
+      return Math.round(value / 50) * 50;
+    };
+
+    const indexes = [Math.floor(prices.length * 0.33), Math.floor(prices.length * 0.66), prices.length - 1];
+    const next = indexes
+      .map((index) => prices[Math.max(0, Math.min(index, prices.length - 1))])
+      .map(toNiceStep)
+      .filter((value) => value > 0);
+
+    if (maxPrice > 0) next.push(maxPrice);
+    return [...new Set(next)].sort((a, b) => a - b);
+  }, [products, maxPrice]);
 
   useEffect(() => {
     setVisibleCount(PRODUCTS_BATCH_SIZE);
-  }, [search, category]);
+  }, [search, category, inStockOnly, minRating, maxPrice]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      api
+        .post("/products/search-events", {
+          query: search,
+          category,
+          storeSlug: selectedStoreSlug !== "all" ? selectedStoreSlug : "",
+          inStockOnly,
+          minRating,
+          maxPrice,
+          resultCount: visibleProducts.length,
+        })
+        .catch(() => null);
+    }, 350);
+    return () => window.clearTimeout(timeoutId);
+  }, [search, category, selectedStoreSlug, inStockOnly, minRating, maxPrice, visibleProducts.length]);
 
   useEffect(() => {
     if (!loadMoreRef.current) return undefined;
@@ -194,6 +245,79 @@ export const StoreHomePage = () => {
                 {store.name}
               </button>
             ))}
+          </div>
+        </div>
+        <div className="mt-3 overflow-x-auto">
+          <div className="flex min-w-max gap-2 pb-1">
+            <button
+              type="button"
+              onClick={() => {
+                const next = new URLSearchParams(searchParams);
+                if (inStockOnly) next.delete("inStock");
+                else next.set("inStock", "true");
+                setSearchParams(next);
+              }}
+              className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                inStockOnly
+                  ? "border-primary bg-primary text-white"
+                  : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+              }`}
+            >
+              In Stock
+            </button>
+            {[4, 3].map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => {
+                  const next = new URLSearchParams(searchParams);
+                  if (Number(next.get("minRating") || 0) === value) next.delete("minRating");
+                  else next.set("minRating", String(value));
+                  setSearchParams(next);
+                }}
+                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                  minRating === value
+                    ? "border-primary bg-primary text-white"
+                    : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                }`}
+              >
+                {value}★ & Up
+              </button>
+            ))}
+            {maxPriceOptions.map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => {
+                  const next = new URLSearchParams(searchParams);
+                  if (Number(next.get("maxPrice") || 0) === value) next.delete("maxPrice");
+                  else next.set("maxPrice", String(value));
+                  setSearchParams(next);
+                }}
+                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                  maxPrice === value
+                    ? "border-primary bg-primary text-white"
+                    : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                }`}
+              >
+                Max KES {value}
+              </button>
+            ))}
+            {(inStockOnly || minRating > 0 || maxPrice > 0) ? (
+              <button
+                type="button"
+                onClick={() => {
+                  const next = new URLSearchParams(searchParams);
+                  next.delete("inStock");
+                  next.delete("minRating");
+                  next.delete("maxPrice");
+                  setSearchParams(next);
+                }}
+                className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-100"
+              >
+                Clear Filters
+              </button>
+            ) : null}
           </div>
         </div>
         <div className="mt-3 overflow-x-auto">

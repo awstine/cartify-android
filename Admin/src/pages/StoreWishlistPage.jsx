@@ -16,6 +16,7 @@ export const StoreWishlistPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState("");
+  const [togglingAlertKey, setTogglingAlertKey] = useState("");
 
   const loadWishlist = async () => {
     setLoading(true);
@@ -48,6 +49,31 @@ export const StoreWishlistPage = () => {
       // Keep UI stable if delete fails.
     } finally {
       setBusyId("");
+    }
+  };
+
+  const toggleAlert = async (productId, key, value) => {
+    const stateKey = `${productId}-${key}`;
+    setTogglingAlertKey(stateKey);
+    try {
+      await api.patch(`/wishlist/items/${productId}/alerts`, { [key]: value });
+      setItems((prev) =>
+        prev.map((entry) =>
+          entry.productId === productId
+            ? {
+                ...entry,
+                alerts: {
+                  ...entry.alerts,
+                  [key]: value,
+                },
+              }
+            : entry
+        )
+      );
+    } catch (_err) {
+      // Keep UI stable if update fails.
+    } finally {
+      setTogglingAlertKey("");
     }
   };
 
@@ -85,6 +111,28 @@ export const StoreWishlistPage = () => {
               <p className="mt-3 truncate text-base font-semibold text-slate-900">{product.title}</p>
               <p className="text-xs text-slate-500">{product.category || "general"}</p>
               <p className="mt-1 text-sm font-bold text-slate-900">{formatMoney(product.price)}</p>
+              <div className="mt-2 space-y-1 text-xs text-slate-600">
+                <label className="flex items-center justify-between gap-2">
+                  <span>Price-drop alerts</span>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(item.alerts?.priceDrop)}
+                    disabled={togglingAlertKey === `${item.productId}-priceDrop`}
+                    onChange={(event) => toggleAlert(item.productId, "priceDrop", event.target.checked)}
+                  />
+                </label>
+                <label className="flex items-center justify-between gap-2">
+                  <span>Back-in-stock alerts</span>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(item.alerts?.backInStock)}
+                    disabled={togglingAlertKey === `${item.productId}-backInStock`}
+                    onChange={(event) => toggleAlert(item.productId, "backInStock", event.target.checked)}
+                  />
+                </label>
+                {item.alertState?.priceDropped ? <p className="text-emerald-700">Price dropped since you saved it.</p> : null}
+                {item.alertState?.backInStock ? <p className="text-emerald-700">Back in stock now.</p> : null}
+              </div>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <Button
                   variant="secondary"
@@ -108,4 +156,3 @@ export const StoreWishlistPage = () => {
     </div>
   );
 };
-

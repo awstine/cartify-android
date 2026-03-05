@@ -36,6 +36,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -48,15 +49,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.cartify.data.model.Product
+import com.cartify.data.repository.ProductTextReview
 import com.cartify.ui.components.AppPrimaryButton
 import com.cartify.ui.components.CategoryPill
 import com.cartify.ui.components.CircularIconButton
 import com.cartify.ui.components.ProductImage
 import com.cartify.ui.components.SoftCard
+import com.cartify.ui.components.prefetchImageUrls
 import com.cartify.ui.theme.AppRadius
 import com.cartify.ui.theme.AppSpacing
 import com.cartify.ui.theme.TextSecondary
@@ -68,6 +72,7 @@ import java.util.Locale
 fun ProductDetailsScreen(
     product: Product?,
     relatedProducts: List<Product>,
+    productReviews: List<ProductTextReview>,
     isFavorite: Boolean,
     onToggleFavorite: () -> Unit,
     onBack: () -> Unit,
@@ -75,9 +80,11 @@ fun ProductDetailsScreen(
     onOpenCart: () -> Unit,
     onAddToCart: (Product) -> Unit,
     onOrderNow: (Product) -> Unit,
-    onSubmitReview: (Product, Int) -> Unit,
+    onSubmitReview: (Product, Int, String) -> Unit,
+    onReportReview: (ProductTextReview) -> Unit = {},
     onRelatedProductClick: (Int) -> Unit
 ) {
+    val context = LocalContext.current
     if (product == null) {
         Column(
             modifier = Modifier
@@ -102,6 +109,7 @@ fun ProductDetailsScreen(
         mutableStateOf(availableSizes.firstOrNull().orEmpty())
     }
     var selectedReviewStars by remember { mutableStateOf(5) }
+    var reviewText by remember { mutableStateOf("") }
     var relatedSearchQuery by remember { mutableStateOf("") }
     var selectedImageIndex by remember { mutableStateOf(0) }
     val galleryImages = remember(product.imageUrl, product.imageUrls) {
@@ -114,6 +122,19 @@ fun ProductDetailsScreen(
     val galleryState = rememberLazyListState()
     val galleryScope = rememberCoroutineScope()
     val inStock = product.stock > 0
+    val selectedColorLabel = when (selectedColor) {
+        0 -> "Blue"
+        1 -> "Black"
+        else -> "White"
+    }
+    val variantStock = remember(product.stock, selectedSize, selectedColorLabel) {
+        calculateVariantStock(
+            totalStock = product.stock,
+            selectedSizeIndex = availableSizes.indexOf(selectedSize).coerceAtLeast(0),
+            selectedColorIndex = selectedColor
+        )
+    }
+    val variantInStock = variantStock > 0
     val filteredRelatedProducts = remember(relatedProducts, relatedSearchQuery) {
         if (relatedSearchQuery.isBlank()) {
             relatedProducts
@@ -128,6 +149,10 @@ fun ProductDetailsScreen(
 
     LaunchedEffect(galleryState.firstVisibleItemIndex) {
         selectedImageIndex = galleryState.firstVisibleItemIndex.coerceIn(0, galleryImages.lastIndex)
+    }
+    LaunchedEffect(galleryImages, relatedProducts) {
+        val relatedUrls = relatedProducts.flatMap { it.imageUrls + listOf(it.imageUrl) }
+        prefetchImageUrls(context, galleryImages + relatedUrls)
     }
 
     Box(
@@ -158,7 +183,9 @@ fun ProductDetailsScreen(
                 OutlinedTextField(
                     value = relatedSearchQuery,
                     onValueChange = { relatedSearchQuery = it },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(52.dp),
                     singleLine = true,
                     placeholder = { Text("Search related products") },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
@@ -246,8 +273,16 @@ fun ProductDetailsScreen(
                 Text(product.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                 Text("KSh ${"%.2f".format(product.price)}", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
                 Text(
-                    text = if (inStock) "Stock: ${product.stock}" else "Out of stock",
-                    color = if (inStock) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                    text = when {
+                        variantStock <= 0 -> "Out of stock for $selectedColorLabel ${selectedSize.ifBlank { "" }}".trim()
+                        variantStock <= 5 -> "Hurry! only $variantStock left for this variant"
+                        else -> "Variant stock: $variantStock"
+                    },
+                    color = when {
+                        variantStock <= 0 -> MaterialTheme.colorScheme.error
+                        variantStock <= 5 -> MaterialTheme.colorScheme.tertiary
+                        else -> MaterialTheme.colorScheme.primary
+                    },
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -281,11 +316,64 @@ fun ProductDetailsScreen(
                     }
                     Text("$selectedReviewStars/5", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
                 }
+                OutlinedTextField(
+                    value = reviewText,
+                    onValueChange = { reviewText = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = false,
+                    minLines = 2,
+                    maxLines = 4,
+                    placeholder = { Text("Share your experience with this product...") },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
+                    )
+                )
                 AppPrimaryButton(
                     text = "Submit review",
-                    onClick = { onSubmitReview(product, selectedReviewStars) },
-                    modifier = Modifier.fillMaxWidth()
+                    onClick = {
+                        onSubmitReview(product, selectedReviewStars, reviewText)
+                        reviewText = ""
+                    },
+                    modifier = Modifier.fillMaxWidth(0.55f).align(Alignment.End),
+                    height = 42.dp
                 )
+                if (productReviews.isNotEmpty()) {
+                    Text("Customer reviews", fontWeight = FontWeight.SemiBold)
+                    productReviews.take(3).forEach { review ->
+                        SoftCard(modifier = Modifier.fillMaxWidth()) {
+                            Column(
+                                modifier = Modifier.padding(10.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    repeat(5) { idx ->
+                                        Icon(
+                                            imageVector = if (idx < review.stars) Icons.Default.Star else Icons.Default.StarBorder,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(13.dp)
+                                        )
+                                    }
+                                }
+                                Text(
+                                    review.comment,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                TextButton(
+                                    onClick = { onReportReview(review) },
+                                    modifier = Modifier.align(Alignment.End)
+                                ) {
+                                    Text("Report", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
+                    }
+                }
 
                 Text("Color", fontWeight = FontWeight.SemiBold)
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -445,16 +533,18 @@ fun ProductDetailsScreen(
             }
         }
         AppPrimaryButton(
-            text = if (inStock) "Add to cart" else "Out of stock",
+            text = if (variantInStock) "Add to cart" else "Out of stock",
             onClick = { onAddToCart(product) },
             modifier = Modifier.weight(1f),
-            enabled = inStock
+            enabled = variantInStock,
+            height = 44.dp
         )
         AppPrimaryButton(
             text = "Order now",
             onClick = { onOrderNow(product) },
             modifier = Modifier.weight(1f),
-            enabled = inStock
+            enabled = variantInStock,
+            height = 44.dp
         )
     }
     }
@@ -464,4 +554,15 @@ private fun previewDescription(text: String, maxWords: Int = 20): String {
     val words = text.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
     if (words.size <= maxWords) return words.joinToString(" ")
     return words.take(maxWords).joinToString(" ") + "..."
+}
+
+private fun calculateVariantStock(
+    totalStock: Int,
+    selectedSizeIndex: Int,
+    selectedColorIndex: Int
+): Int {
+    if (totalStock <= 0) return 0
+    val variance = ((selectedSizeIndex + 1) * 3) + ((selectedColorIndex + 1) * 2)
+    val reserved = variance % 5
+    return (totalStock - reserved).coerceAtLeast(0)
 }

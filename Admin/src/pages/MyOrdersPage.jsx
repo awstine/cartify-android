@@ -12,6 +12,7 @@ export const MyOrdersPage = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [busyOrderId, setBusyOrderId] = useState("");
 
   const loadOrders = async () => {
     const prefetched = consumePrefetchedGet("/orders");
@@ -36,6 +37,27 @@ export const MyOrdersPage = () => {
     loadOrders();
   }, []);
 
+  const requestReturnRefund = async (order) => {
+    const type = window.prompt("Type 'return' or 'refund':", "refund");
+    if (!type || !["return", "refund"].includes(type.trim().toLowerCase())) return;
+    const reason = window.prompt("Reason for request:", "");
+    if (!reason || reason.trim().length < 3) return;
+    const details = window.prompt("More details (optional):", "") || "";
+    setBusyOrderId(order._id);
+    try {
+      await api.patch(`/orders/${order._id}/return-refund-request`, {
+        type: type.trim().toLowerCase(),
+        reason: reason.trim(),
+        details: details.trim(),
+      });
+      await loadOrders();
+    } catch (_err) {
+      // Error state already handled by page reload action.
+    } finally {
+      setBusyOrderId("");
+    }
+  };
+
   if (loading) return <LoadingState label="Loading orders..." showSpinner={false} />;
   if (error) return <ErrorState message={error} action={<Button onClick={loadOrders}>Retry</Button>} />;
   if (orders.length === 0) {
@@ -54,6 +76,7 @@ export const MyOrdersPage = () => {
             { key: "items", label: "Items" },
             { key: "total", label: "Total" },
             { key: "status", label: "Status" },
+            { key: "support", label: "Support" },
           ]}
           rows={orders}
           rowKey={(order) => order._id}
@@ -68,9 +91,35 @@ export const MyOrdersPage = () => {
                   {order.status}
                 </Badge>
               </Td>
+              <Td>
+                {order.status === "delivered" ? (
+                  <div className="flex flex-col gap-1">
+                    <Button
+                      variant="secondary"
+                      className="px-2 py-1 text-xs"
+                      loading={busyOrderId === order._id}
+                      onClick={() => requestReturnRefund(order)}
+                    >
+                      {order.returnRefundRequest?.requested ? "Update Request" : "Request Return/Refund"}
+                    </Button>
+                    {order.returnRefundRequest?.requested ? (
+                      <p className="text-[11px] text-slate-500">
+                        {order.returnRefundRequest.type} - {order.returnRefundRequest.status}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <span className="text-xs text-slate-500">Available after delivery</span>
+                )}
+              </Td>
             </>
           )}
         />
+      </div>
+      <div className="mt-4">
+        <Link to="/help-safety" className="text-sm text-primary underline underline-offset-2">
+          Need help? Open Help & Safety
+        </Link>
       </div>
     </div>
   );

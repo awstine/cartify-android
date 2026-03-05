@@ -51,6 +51,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -77,9 +78,12 @@ import com.cartify.data.remote.backend.BackendStore
 import com.cartify.data.model.Product
 import com.cartify.data.remote.backend.WishlistItem
 import com.cartify.data.remote.backend.UserProfileResponse
+import com.cartify.data.repository.AddressBookEntry
 import com.cartify.data.repository.BackendRepository
+import com.cartify.data.repository.CommerceExperienceRepository
 import com.cartify.ui.components.AppCard
 import com.cartify.ui.components.AppEmptyState
+import com.cartify.ui.components.AppPrimaryButton
 import com.cartify.ui.components.AppTextInput
 import com.cartify.ui.components.ProductImage
 import kotlinx.coroutines.launch
@@ -146,7 +150,9 @@ fun CategoriesScreen(
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp),
             singleLine = true,
             placeholder = {
                 Text(
@@ -538,7 +544,9 @@ fun StoresScreen(
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
                     singleLine = true,
                     placeholder = { Text("Search stores...") },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search stores") },
@@ -677,6 +685,13 @@ private fun storeInitialsColor(key: String): Color {
     return palette[index]
 }
 
+private fun truncateWords(text: String, maxWords: Int): String {
+    if (maxWords <= 0) return ""
+    val words = text.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+    if (words.size <= maxWords) return text.trim()
+    return words.take(maxWords).joinToString(" ") + "..."
+}
+
 @Composable
 private fun OrderShortcutItem(title: String, onClick: () -> Unit) {
     Column(
@@ -741,9 +756,11 @@ private fun ProfileProductCard(
                 fontWeight = FontWeight.Bold
             )
             Text(
-                product.description,
+                truncateWords(product.description, maxWords = 29),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis
             )
             val rating = product.rating?.rate ?: 0.0
             val filledStars = rating.toInt().coerceIn(0, 5)
@@ -1109,7 +1126,10 @@ fun WishlistScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun OrdersScreen(token: String?) {
+fun OrdersScreen(
+    token: String?,
+    onOpenOrderDetails: (String) -> Unit = {}
+) {
     val repository = remember { BackendRepository() }
     var refreshTick by remember { mutableStateOf(0) }
     val state by produceState<OrdersUiState>(initialValue = OrdersUiState(isLoading = true), token, refreshTick) {
@@ -1260,6 +1280,10 @@ fun OrdersScreen(token: String?) {
                                                 }
                                             }
                                         }
+                                        TextButton(
+                                            onClick = { onOpenOrderDetails(order.id) },
+                                            modifier = Modifier.align(Alignment.End)
+                                        ) { Text("View details") }
                                     }
                                 }
                             }
@@ -1271,26 +1295,370 @@ fun OrdersScreen(token: String?) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun OffersScreen() = SimpleListPage(
-    title = "Offers",
-    subtitle = "Latest campaigns and discounts",
-    rows = listOf("Up to 40% off electronics", "Weekend buy-1-get-1 fashion", "Free shipping over KSh 50")
-)
+fun OrderDetailsScreen(
+    token: String?,
+    orderId: String,
+    onBack: () -> Unit = {},
+    onReorder: (BackendOrder) -> Unit = {}
+) {
+    val repository = remember { BackendRepository() }
+    var refreshTick by remember { mutableStateOf(0) }
+    val order by produceState<BackendOrder?>(initialValue = null, token, orderId, refreshTick) {
+        val authToken = token?.trim().orEmpty()
+        value = if (authToken.isBlank()) null else {
+            runCatching { repository.getOrders(authToken).firstOrNull { it.id == orderId } }.getOrNull()
+        }
+    }
+
+    val current = order
+    if (current == null) {
+        SimpleListPage(
+            title = "Order details",
+            subtitle = "Unable to load order",
+            rows = listOf("Order not found")
+        )
+        return
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(16.dp)
+    ) {
+        val pullToRefreshState = rememberPullToRefreshState()
+        PullToRefreshBox(
+            isRefreshing = false,
+            onRefresh = { refreshTick += 1 },
+            state = pullToRefreshState,
+            modifier = Modifier.fillMaxSize()
+        ) {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Order details", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                        TextButton(onClick = onBack) { Text("Back") }
+                    }
+                    Text(
+                        "Order #${current.id.takeLast(8)} - ${current.createdAt.take(10)}",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                item {
+                    AppCard(modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text("Delivery ETA: ${estimatedDeliveryEta(current.status, current.createdAt)}")
+                            Text("Cancellation window: ${if (isOrderCancelable(current.createdAt)) "Open" else "Closed"}")
+                            val steps = listOf("Placed", "Processing", "Shipped", "Delivered")
+                            val progressIndex = orderProgressIndex(current.status)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                steps.forEachIndexed { index, step ->
+                                    Column(
+                                        modifier = Modifier.weight(1f),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(10.dp)
+                                                .clip(CircleShape)
+                                                .background(
+                                                    if (progressIndex >= index) MaterialTheme.colorScheme.primary
+                                                    else MaterialTheme.colorScheme.surfaceVariant
+                                                )
+                                        )
+                                        Text(step, style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                item { Text("Items", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
+                items(current.items, key = { "${it.productId}-${it.title}" }) { item ->
+                    AppCard(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(item.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
+                                Text("Qty ${item.quantity} - KSh ${"%.2f".format(item.price)}", style = MaterialTheme.typography.bodySmall)
+                            }
+                            Text("KSh ${"%.2f".format(item.lineTotal)}", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+                item {
+                    AppCard(modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            InvoiceRow("Subtotal", current.subtotal)
+                            InvoiceRow("Shipping", current.shipping)
+                            InvoiceRow("Tax", current.tax)
+                            InvoiceRow("Total", current.total, strong = true)
+                        }
+                    }
+                }
+                item {
+                    AppPrimaryButton(
+                        text = "Reorder",
+                        onClick = { onReorder(current) },
+                        modifier = Modifier.fillMaxWidth(),
+                        height = 46.dp
+                    )
+                }
+            }
+        }
+    }
+}
 
 @Composable
-fun SettingsScreen() = SimpleListPage(
-    title = "Settings",
-    subtitle = "General app preferences",
-    rows = listOf("Theme and display", "Language and region", "Privacy controls", "Security")
-)
+fun OffersScreen() {
+    val context = LocalContext.current
+    val repository = remember { CommerceExperienceRepository(context) }
+    val analytics by repository.analytics.collectAsState()
+    val flags by repository.featureFlags.collectAsState()
+    val expVariant = remember { repository.assignExperiment("conversion_cta", "A", "B") }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text("Growth Dashboard", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text("Experiment variant: $expVariant", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        listOf(
+            "Views: ${analytics.productViews}",
+            "Searches: ${analytics.searches}",
+            "Add-to-cart: ${analytics.addToCartAttempts}",
+            "Checkout starts: ${analytics.checkoutStarts}",
+            "Checkout success: ${analytics.checkoutSuccesses}",
+            "Coupons: ${analytics.couponApplies}"
+        ).forEach { row ->
+            AppCard(modifier = Modifier.fillMaxWidth()) {
+                Text(row, modifier = Modifier.padding(12.dp))
+            }
+        }
+        AppCard(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Feature flags", fontWeight = FontWeight.SemiBold)
+                Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Recommendations")
+                    Switch(
+                        checked = flags.recommendationsEnabled,
+                        onCheckedChange = { repository.setFeatureFlags(flags.copy(recommendationsEnabled = it)) }
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Smooth category animation")
+                    Switch(
+                        checked = flags.smoothCategoryAnimationEnabled,
+                        onCheckedChange = { repository.setFeatureFlags(flags.copy(smoothCategoryAnimationEnabled = it)) }
+                    )
+                }
+            }
+        }
+    }
+}
 
 @Composable
-fun HelpScreen() = SimpleListPage(
-    title = "Help",
-    subtitle = "Support and policy information",
-    rows = listOf("Contact support", "Returns and refunds", "Shipping policy", "FAQ")
-)
+fun SettingsScreen(token: String? = null) {
+    val context = LocalContext.current
+    val repository = remember { CommerceExperienceRepository(context) }
+    val addresses by repository.addresses.collectAsState()
+    val lowDataMode by repository.lowDataMode.collectAsState()
+    val security by repository.securityState.collectAsState()
+    var email by remember { mutableStateOf("") }
+    var label by remember { mutableStateOf("Home") }
+    var recipient by remember { mutableStateOf("") }
+    var line1 by remember { mutableStateOf("") }
+    var city by remember { mutableStateOf("") }
+    var statusMessage by remember { mutableStateOf<String?>(null) }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item {
+            Text("Settings", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        }
+        item {
+            AppCard(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Low data mode")
+                    Switch(checked = lowDataMode, onCheckedChange = repository::setLowDataMode)
+                }
+            }
+        }
+        item {
+            AppCard(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Account security", fontWeight = FontWeight.SemiBold)
+                    Text("Email verified: ${if (security.emailVerified) "Yes" else "No"}")
+                    AppTextInput(value = email, onValueChange = { email = it }, label = "Email for password reset")
+                    AppPrimaryButton(
+                        text = "Request password reset",
+                        onClick = {
+                            repository.recordPasswordResetRequest()
+                            statusMessage = if (email.isBlank()) "Enter email first" else "Password reset requested"
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        height = 44.dp
+                    )
+                    AppPrimaryButton(
+                        text = "Verify email",
+                        onClick = {
+                            val authToken = token?.trim().orEmpty()
+                            if (authToken.isBlank()) {
+                                statusMessage = "Sign in required"
+                            } else {
+                                repository.markEmailVerified()
+                                statusMessage = "Email marked verified"
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        height = 44.dp
+                    )
+                    AppPrimaryButton(
+                        text = "Revoke other sessions",
+                        onClick = {
+                            val authToken = token?.trim().orEmpty()
+                            if (authToken.isBlank()) {
+                                statusMessage = "Sign in required"
+                            } else {
+                                repository.revokeOtherSessions()
+                                statusMessage = "Other sessions revoked"
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        height = 44.dp
+                    )
+                    if (!statusMessage.isNullOrBlank()) {
+                        Text(statusMessage.orEmpty(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            }
+        }
+        item {
+            AppCard(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Address book", fontWeight = FontWeight.SemiBold)
+                    AppTextInput(value = label, onValueChange = { label = it }, label = "Label")
+                    AppTextInput(value = recipient, onValueChange = { recipient = it }, label = "Recipient")
+                    AppTextInput(value = line1, onValueChange = { line1 = it }, label = "Address")
+                    AppTextInput(value = city, onValueChange = { city = it }, label = "City")
+                    AppPrimaryButton(
+                        text = "Add address",
+                        onClick = {
+                            if (recipient.isBlank() || line1.isBlank() || city.isBlank()) return@AppPrimaryButton
+                            repository.addAddress(
+                                AddressBookEntry(
+                                    label = label,
+                                    recipientName = recipient,
+                                    phone = "",
+                                    line1 = line1,
+                                    city = city,
+                                    isDefault = addresses.isEmpty()
+                                )
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        height = 44.dp
+                    )
+                }
+            }
+        }
+        items(addresses, key = { it.id }) { address ->
+            AppCard(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(address.label, fontWeight = FontWeight.Bold)
+                        Text("${address.recipientName} - ${address.line1}, ${address.city}", style = MaterialTheme.typography.bodySmall)
+                    }
+                    TextButton(onClick = { repository.removeAddress(address.id) }) { Text("Delete") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun HelpScreen() {
+    val context = LocalContext.current
+    val repository = remember { CommerceExperienceRepository(context) }
+    var productIdInput by remember { mutableStateOf("") }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text("Help & Moderation", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        AppPrimaryButton(
+            text = "Contact support",
+            onClick = { repository.trackSupportRequest() },
+            modifier = Modifier.fillMaxWidth(),
+            height = 44.dp
+        )
+        AppCard(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Admin moderation", fontWeight = FontWeight.SemiBold)
+                AppTextInput(value = productIdInput, onValueChange = { productIdInput = it }, label = "Product id")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = {
+                        productIdInput.toIntOrNull()?.let { repository.flagProductForFraud(it) }
+                    }) { Text("Flag fraud") }
+                    TextButton(onClick = {
+                        productIdInput.toIntOrNull()?.let { repository.setProductBlocked(it, true) }
+                    }) { Text("Block") }
+                    TextButton(onClick = {
+                        productIdInput.toIntOrNull()?.let { repository.setProductBlocked(it, false) }
+                    }) { Text("Unblock") }
+                }
+            }
+        }
+    }
+}
 
 @Composable
 fun AboutScreen() = SimpleListPage(
@@ -1381,6 +1749,47 @@ private fun prettyOrderStatus(status: String): String {
                 if (ch.isLowerCase()) ch.titlecase(Locale.getDefault()) else ch.toString()
             }
         }
+}
+
+@Composable
+private fun InvoiceRow(label: String, amount: Double, strong: Boolean = false) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (strong) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = if (strong) FontWeight.Bold else FontWeight.Normal
+        )
+        Text(
+            "KSh ${"%.2f".format(amount)}",
+            fontWeight = if (strong) FontWeight.ExtraBold else FontWeight.SemiBold,
+            color = if (strong) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+        )
+    }
+}
+
+private fun isOrderCancelable(createdAt: String): Boolean {
+    val normalized = createdAt.take(19)
+    if (normalized.length < 10) return false
+    val createdMs = runCatching {
+        java.time.OffsetDateTime.parse(createdAt).toInstant().toEpochMilli()
+    }.getOrElse {
+        System.currentTimeMillis()
+    }
+    return (System.currentTimeMillis() - createdMs) <= (30L * 60L * 1000L)
+}
+
+private fun estimatedDeliveryEta(status: String, createdAt: String): String {
+    val dayOffset = when (orderProgressIndex(status)) {
+        0 -> 4
+        1 -> 3
+        2 -> 1
+        3 -> 0
+        else -> 4
+    }
+    val baseDate = runCatching { java.time.OffsetDateTime.parse(createdAt).toLocalDate() }
+        .getOrElse { java.time.LocalDate.now() }
+    return baseDate.plusDays(dayOffset.toLong()).toString()
 }
 
 private data class WishlistUiState(

@@ -18,7 +18,21 @@ const mapUserProfile = (user) => ({
   preferences: {
     notificationsEnabled: user.preferences?.notificationsEnabled ?? true,
     darkModeEnabled: user.preferences?.darkModeEnabled ?? false,
+    lowDataModeEnabled: user.preferences?.lowDataModeEnabled ?? false,
   },
+  addresses: (user.addresses || []).map((address) => ({
+    id: String(address._id),
+    label: address.label || "Home",
+    fullName: address.fullName || "",
+    phone: address.phone || "",
+    line1: address.line1 || "",
+    line2: address.line2 || "",
+    city: address.city || "",
+    state: address.state || "",
+    postalCode: address.postalCode || "",
+    country: address.country || "",
+    isDefault: Boolean(address.isDefault),
+  })),
   createdAt: user.createdAt,
 });
 
@@ -39,6 +53,19 @@ router.patch(
     body("preferences").optional().isObject(),
     body("preferences.notificationsEnabled").optional().isBoolean(),
     body("preferences.darkModeEnabled").optional().isBoolean(),
+    body("preferences.lowDataModeEnabled").optional().isBoolean(),
+    body("addresses").optional().isArray(),
+    body("addresses.*.id").optional().isString(),
+    body("addresses.*.label").optional().isString(),
+    body("addresses.*.fullName").optional().isString(),
+    body("addresses.*.phone").optional().isString(),
+    body("addresses.*.line1").optional().isString(),
+    body("addresses.*.line2").optional().isString(),
+    body("addresses.*.city").optional().isString(),
+    body("addresses.*.state").optional().isString(),
+    body("addresses.*.postalCode").optional().isString(),
+    body("addresses.*.country").optional().isString(),
+    body("addresses.*.isDefault").optional().isBoolean(),
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -49,7 +76,7 @@ router.patch(
     const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    const { name, email, phoneNumber, profileImageUrl, preferences } = req.body;
+    const { name, email, phoneNumber, profileImageUrl, preferences, addresses } = req.body;
     if (typeof name === "string") user.name = name.trim();
     if (typeof phoneNumber === "string") user.phoneNumber = phoneNumber.trim();
     if (typeof profileImageUrl === "string") user.profileImageUrl = profileImageUrl.trim();
@@ -65,7 +92,39 @@ router.patch(
       user.preferences = {
         notificationsEnabled: preferences.notificationsEnabled ?? user.preferences?.notificationsEnabled ?? true,
         darkModeEnabled: preferences.darkModeEnabled ?? user.preferences?.darkModeEnabled ?? false,
+        lowDataModeEnabled: preferences.lowDataModeEnabled ?? user.preferences?.lowDataModeEnabled ?? false,
       };
+    }
+
+    if (Array.isArray(addresses)) {
+      const normalized = addresses
+        .map((item) => ({
+          _id: item.id,
+          label: String(item.label || "Home").trim(),
+          fullName: String(item.fullName || "").trim(),
+          phone: String(item.phone || "").trim(),
+          line1: String(item.line1 || "").trim(),
+          line2: String(item.line2 || "").trim(),
+          city: String(item.city || "").trim(),
+          state: String(item.state || "").trim(),
+          postalCode: String(item.postalCode || "").trim(),
+          country: String(item.country || "").trim(),
+          isDefault: Boolean(item.isDefault),
+        }))
+        .filter((item) => item.line1);
+
+      let seenDefault = false;
+      user.addresses = normalized.map((item, index) => {
+        const isDefault = item.isDefault && !seenDefault;
+        if (isDefault) seenDefault = true;
+        return {
+          ...item,
+          isDefault,
+        };
+      });
+      if (!seenDefault && user.addresses.length > 0) {
+        user.addresses[0].isDefault = true;
+      }
     }
 
     await user.save();

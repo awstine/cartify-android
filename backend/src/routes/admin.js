@@ -15,6 +15,7 @@ import { Coupon } from "../models/Coupon.js";
 import { Dispute } from "../models/Dispute.js";
 import { Order } from "../models/Order.js";
 import { Product } from "../models/Product.js";
+import { SearchEvent } from "../models/SearchEvent.js";
 import { Store } from "../models/Store.js";
 import { User } from "../models/User.js";
 import { Cart } from "../models/Cart.js";
@@ -187,6 +188,71 @@ router.get("/dashboard", async (_req, res) => {
     realizedProfitFromSales: Number(realizedProfitFromSales || 0),
     salesTrend,
     lowStockProducts,
+  });
+});
+
+router.get("/growth", async (req, res) => {
+  const orderScope = getOrderScope(req);
+  const storeScope = getStoreScope(req);
+  const start = new Date();
+  start.setUTCHours(0, 0, 0, 0);
+  start.setUTCDate(start.getUTCDate() - 29);
+
+  const createdScope = {
+    ...(storeScope.storeId ? { storeId: storeScope.storeId } : {}),
+    createdAt: { $gte: start },
+  };
+
+  const [sessionEvents, orders, customers, wishlistAdds, products] = await Promise.all([
+    SearchEvent.find({ createdAt: { $gte: start } }).select("createdAt"),
+    Order.find({ ...orderScope, createdAt: { $gte: start } }).select("createdAt total status"),
+    User.countDocuments({ role: "customer" }),
+    Wishlist.find({}).select("items"),
+    Product.countDocuments({ ...storeScope }),
+  ]);
+
+  const sessions = sessionEvents.length;
+  const placedOrders = orders.length;
+  const deliveredOrders = orders.filter((order) => order.status === "delivered").length;
+  const conversionRate = sessions > 0 ? (placedOrders / sessions) * 100 : 0;
+  const fulfillmentRate = placedOrders > 0 ? (deliveredOrders / placedOrders) * 100 : 0;
+  const avgOrderValue = placedOrders > 0 ? orders.reduce((sum, item) => sum + Number(item.total || 0), 0) / placedOrders : 0;
+  const wishlistIntent = wishlistAdds.reduce((sum, item) => sum + Number(item.items?.length || 0), 0);
+
+  const dailyEngagementMap = new Map();
+  for (let index = 0; index < 30; index += 1) {
+    const date = new Date(start);
+    date.setUTCDate(start.getUTCDate() + index);
+    const key = date.toISOString().slice(0, 10);
+    dailyEngagementMap.set(key, { date: key, sessions: 0, orders: 0 });
+  }
+
+  sessionEvents.forEach((event) => {
+    const key = new Date(event.createdAt).toISOString().slice(0, 10);
+    const current = dailyEngagementMap.get(key);
+    if (current) current.sessions += 1;
+  });
+  orders.forEach((order) => {
+    const key = new Date(order.createdAt).toISOString().slice(0, 10);
+    const current = dailyEngagementMap.get(key);
+    if (current) current.orders += 1;
+  });
+
+  res.json({
+    funnel: {
+      sessions,
+      productCount: products,
+      wishlistIntent,
+      placedOrders,
+      deliveredOrders,
+      conversionRate,
+      fulfillmentRate,
+      avgOrderValue,
+    },
+    engagement: [...dailyEngagementMap.values()],
+    totals: {
+      customers,
+    },
   });
 });
 
