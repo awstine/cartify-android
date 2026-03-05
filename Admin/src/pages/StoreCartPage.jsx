@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, consumePrefetchedGet, prefetchGet } from "../api";
 import { Button } from "../components/ui/Button";
 import { EmptyState, ErrorState, LoadingState } from "../components/ui/States";
 import { useToast } from "../context/ToastContext";
+import { withStoreQuery } from "../storeMode";
 
 const formatMoney = (value) => new Intl.NumberFormat("en-KE", { style: "currency", currency: "KES" }).format(Number(value || 0));
 const renderStars = (rating) => {
@@ -24,6 +25,8 @@ const renderStars = (rating) => {
 
 export const StoreCartPage = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const storeSlug = searchParams.get("store") || "";
   const { showToast } = useToast();
   const [items, setItems] = useState([]);
   const [catalogProducts, setCatalogProducts] = useState([]);
@@ -58,7 +61,10 @@ export const StoreCartPage = () => {
     let active = true;
     const loadCatalogProducts = async () => {
       try {
-        const data = await prefetchGet("/products", { ttlMs: 5 * 60_000 });
+        const data = await prefetchGet("/products", {
+          params: storeSlug ? { storeSlug } : undefined,
+          ttlMs: 5 * 60_000,
+        });
         if (active) setCatalogProducts(data || []);
       } catch (_err) {
         if (active) setCatalogProducts([]);
@@ -68,13 +74,24 @@ export const StoreCartPage = () => {
     return () => {
       active = false;
     };
-  }, []);
+  }, [storeSlug]);
 
   const summary = useMemo(() => {
     const subtotal = items.reduce((sum, item) => sum + Number(item.product?.price || 0) * Number(item.quantity || 0), 0);
     const shipping = subtotal > 0 ? 6.99 : 0;
     const tax = subtotal * 0.08;
     return { subtotal, shipping, tax, total: subtotal + shipping + tax };
+  }, [items]);
+
+  const storeGroups = useMemo(() => {
+    const groups = new Map();
+    items.forEach((item) => {
+      const storeId = item.product?.storeId || "platform";
+      const current = groups.get(storeId) || { name: item.product?.storeName || "Marketplace", count: 0 };
+      current.count += Number(item.quantity || 0);
+      groups.set(storeId, current);
+    });
+    return [...groups.values()];
   }, [items]);
 
   const updateQty = async (productId, delta) => {
@@ -98,8 +115,12 @@ export const StoreCartPage = () => {
   const checkout = async () => {
     setSubmitting(true);
     try {
-      await api.post("/cart/checkout");
-      showToast({ type: "success", title: "Order placed successfully" });
+      const response = await api.post("/cart/checkout");
+      const orderCount = Array.isArray(response.data?.orderIds) ? response.data.orderIds.length : 1;
+      showToast({
+        type: "success",
+        title: orderCount > 1 ? `${orderCount} store orders placed` : "Order placed successfully",
+      });
       await loadCart();
     } catch (err) {
       showToast({ type: "error", title: "Checkout failed", message: err?.response?.data?.message || "Try again." });
@@ -114,7 +135,7 @@ export const StoreCartPage = () => {
     } catch (_err) {
       // Ignore and navigate anyway.
     }
-    navigate(`/product/${productId}`);
+    navigate(withStoreQuery(`/product/${productId}`, storeSlug));
   };
 
   const addRecommendedToCart = async (productId) => {
@@ -139,6 +160,11 @@ export const StoreCartPage = () => {
     <div className="mx-auto w-full max-w-6xl">
       <h1 className="font-heading text-xl font-bold text-slate-900 sm:text-2xl">Your Cart</h1>
       <p className="mt-1 text-sm text-slate-600">Review items before checkout.</p>
+      {storeGroups.length > 1 ? (
+        <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          Mixed cart detected: {storeGroups.length} stores in one checkout. Orders will be split per store automatically.
+        </div>
+      ) : null}
 
       {items.length === 0 ? (
         <EmptyState title="Your cart is empty" description="Add products to continue checkout." action={<Link to="/"><Button>Browse Products</Button></Link>} />
@@ -156,6 +182,7 @@ export const StoreCartPage = () => {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium text-slate-900">{item.product?.title || "Unknown product"}</p>
+                    <p className="text-xs text-slate-500">Store: {item.product?.storeName || "Marketplace"}</p>
                     <p className="text-sm text-slate-600">{formatMoney(item.product?.price || 0)}</p>
                     <p className="mt-1 text-xs text-slate-500">
                       Item total: {formatMoney(Number(item.product?.price || 0) * Number(item.quantity || 0))}

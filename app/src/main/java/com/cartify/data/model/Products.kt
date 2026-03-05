@@ -13,6 +13,9 @@ data class Product(
     val category: String,
     @SerializedName("image") val imageUrl: String,
     val imageUrls: List<String> = emptyList(),
+    val storeId: String = "",
+    val storeSlug: String = "",
+    val sizes: List<String> = emptyList(),
     val stock: Int = 0,
     val rating: ProductRating? = null,
 )

@@ -13,10 +13,12 @@ const navItems = [
   { to: "/admin/products", label: "Products", icon: "products" },
   { to: "/admin/categories", label: "Categories", icon: "categories" },
   { to: "/admin/orders", label: "Orders", icon: "orders" },
-  { to: "/admin/users", label: "Customers", icon: "customers" },
+  { to: "/admin/disputes", label: "Disputes", icon: "orders" },
   { to: "/admin/sales", label: "Sales", icon: "sales" },
   { to: "/admin/coupons", label: "Coupons", icon: "categories" },
-  { to: "/admin/audit-logs", label: "Audit Logs", icon: "orders" },
+  { to: "/admin/users", label: "Customers", icon: "customers", platformOnly: true },
+  { to: "/admin/merchants", label: "Merchants", icon: "customers", platformOnly: true },
+  { to: "/admin/audit-logs", label: "Audit Logs", icon: "orders", platformOnly: true },
 ];
 
 const NavIcon = ({ type }) => {
@@ -86,8 +88,13 @@ export const Layout = ({ children }) => {
   const prefetchedRoutesRef = useRef(new Set());
 
   const seenKey = `cartify_admin_last_seen_order_${user?.id || user?.email || "default"}`;
+  const isPlatformAdmin = ["admin", "super_admin"].includes(user?.role || "");
   const formatMoney = (value) =>
     new Intl.NumberFormat("en-KE", { style: "currency", currency: "KES" }).format(value || 0);
+  const allowedNavItems = useMemo(
+    () => navItems.filter((item) => !item.platformOnly || isPlatformAdmin),
+    [isPlatformAdmin]
+  );
 
   const markNotificationsRead = (orders = recentOrders) => {
     if (!orders || orders.length === 0) return;
@@ -148,7 +155,9 @@ export const Layout = ({ children }) => {
       ],
       "/admin/categories": [prefetchGet("/admin/categories")],
       "/admin/orders": [prefetchGet("/admin/orders", { params: { page: 1, limit: 12 } })],
+      "/admin/disputes": [prefetchGet("/admin/disputes", { params: { page: 1, limit: 12 } })],
       "/admin/users": [prefetchGet("/admin/users", { params: { page: 1, limit: 12 } })],
+      "/admin/merchants": [prefetchGet("/admin/merchants", { params: { page: 1, limit: 12 } })],
       "/admin/sales": [prefetchGet("/admin/sales")],
       "/admin/coupons": [prefetchGet("/admin/coupons")],
       "/admin/audit-logs": [prefetchGet("/admin/audit-logs", { params: { page: 1, limit: 20 } })],
@@ -160,7 +169,7 @@ export const Layout = ({ children }) => {
   const navLinks = useMemo(
     () => (
       <nav className="mt-6 flex flex-col gap-1">
-        {navItems.map((item) => (
+        {allowedNavItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
@@ -184,7 +193,7 @@ export const Layout = ({ children }) => {
         ))}
       </nav>
     ),
-    [setMobileOpen]
+    [setMobileOpen, allowedNavItems]
   );
 
   const sidebar = (
@@ -201,7 +210,7 @@ export const Layout = ({ children }) => {
         </>
       ) : (
         <div className="mt-4 flex flex-col items-center gap-2">
-          {navItems.map((item) => (
+          {allowedNavItems.map((item) => (
             <NavLink
               key={`compact-${item.to}`}
               to={item.to}
@@ -245,19 +254,21 @@ export const Layout = ({ children }) => {
               />
             </div>
             <div className="ml-auto flex items-center gap-2">
-              <Button
-                variant="ghost"
-                aria-label="Users"
-                onMouseEnter={() => prefetchAdminRoute("/admin/users")}
-                onFocus={() => prefetchAdminRoute("/admin/users")}
-                onClick={() => navigate("/admin/users")}
-              >
-                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="9" cy="8" r="3" />
-                  <path d="M3 19c0-3.3 2.7-6 6-6s6 2.7 6 6" />
-                  <circle cx="17" cy="9" r="2" />
-                </svg>
-              </Button>
+              {isPlatformAdmin ? (
+                <Button
+                  variant="ghost"
+                  aria-label="Users"
+                  onMouseEnter={() => prefetchAdminRoute("/admin/users")}
+                  onFocus={() => prefetchAdminRoute("/admin/users")}
+                  onClick={() => navigate("/admin/users")}
+                >
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="9" cy="8" r="3" />
+                    <path d="M3 19c0-3.3 2.7-6 6-6s6 2.7 6 6" />
+                    <circle cx="17" cy="9" r="2" />
+                  </svg>
+                </Button>
+              ) : null}
               <div className="relative">
                 <Button
                   variant="ghost"

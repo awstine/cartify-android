@@ -1,17 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, consumePrefetchedGet, prefetchGet } from "../api";
 import { useAuth } from "../auth";
 import { Button } from "../components/ui/Button";
 import { Field, Select, Textarea } from "../components/ui/Field";
 import { EmptyState, ErrorState, LoadingState } from "../components/ui/States";
 import { useToast } from "../context/ToastContext";
+import { withStoreQuery } from "../storeMode";
 
 const formatMoney = (value) => new Intl.NumberFormat("en-KE", { style: "currency", currency: "KES" }).format(Number(value || 0));
 
 export const StoreProductPage = () => {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const storeSlug = searchParams.get("store") || "";
   const { isAuthenticated } = useAuth();
   const { showToast } = useToast();
   const [product, setProduct] = useState(null);
@@ -50,7 +53,10 @@ export const StoreProductPage = () => {
     let active = true;
     const loadCatalogProducts = async () => {
       try {
-        const data = await prefetchGet("/products", { ttlMs: 5 * 60_000 });
+        const data = await prefetchGet("/products", {
+          params: storeSlug ? { storeSlug } : undefined,
+          ttlMs: 5 * 60_000,
+        });
         if (active) setCatalogProducts(data || []);
       } catch (_err) {
         if (active) setCatalogProducts([]);
@@ -60,7 +66,7 @@ export const StoreProductPage = () => {
     return () => {
       active = false;
     };
-  }, []);
+  }, [storeSlug]);
 
   const avgRating = useMemo(() => {
     const reviews = product?.reviews || [];
@@ -70,7 +76,7 @@ export const StoreProductPage = () => {
 
   const addToCart = async () => {
     if (!isAuthenticated) {
-      navigate("/login", { state: { from: `/product/${id}` } });
+      navigate("/login", { state: { from: withStoreQuery(`/product/${id}`, storeSlug) } });
       return;
     }
     try {
@@ -87,13 +93,13 @@ export const StoreProductPage = () => {
     } catch (_err) {
       // Ignore and navigate anyway.
     }
-    navigate(`/product/${productId}`);
+    navigate(withStoreQuery(`/product/${productId}`, storeSlug));
   };
 
   const submitReview = async (event) => {
     event.preventDefault();
     if (!isAuthenticated) {
-      navigate("/login", { state: { from: `/product/${id}` } });
+      navigate("/login", { state: { from: withStoreQuery(`/product/${id}`, storeSlug) } });
       return;
     }
     setSubmitting(true);
@@ -149,6 +155,11 @@ export const StoreProductPage = () => {
         </div>
       </div>
       <div className="rounded-2xl border border-slate-200 bg-white p-5">
+        {storeSlug ? (
+          <Button variant="secondary" className="mb-3" onClick={() => navigate(`/store/${storeSlug}`)}>
+            Back to Store
+          </Button>
+        ) : null}
         <h1 className="font-heading text-2xl font-bold text-slate-900">{product.title}</h1>
         <p className="mt-1 text-sm text-slate-500">{product.category}</p>
         <p className="mt-3 text-2xl font-extrabold text-slate-900">

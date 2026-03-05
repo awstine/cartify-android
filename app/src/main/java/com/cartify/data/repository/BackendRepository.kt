@@ -6,6 +6,7 @@ import com.cartify.data.remote.backend.AuthRequest
 import com.cartify.data.remote.backend.AuthResponse
 import com.cartify.data.remote.backend.BackendOrder
 import com.cartify.data.remote.backend.BackendProduct
+import com.cartify.data.remote.backend.BackendStore
 import com.cartify.data.remote.backend.BackendRetrofitInstance
 import com.cartify.data.remote.backend.CartResponse
 import com.cartify.data.remote.backend.CheckoutResponse
@@ -51,8 +52,12 @@ class BackendRepository {
         return BackendRetrofitInstance.api.login(AuthRequest(email, password))
     }
 
-    suspend fun getProducts(): List<BackendProduct> {
-        return BackendRetrofitInstance.api.getProducts()
+    suspend fun getProducts(storeSlug: String? = null): List<BackendProduct> {
+        return BackendRetrofitInstance.api.getProducts(storeSlug = storeSlug)
+    }
+
+    suspend fun getStores(): List<BackendStore> {
+        return BackendRetrofitInstance.api.getStores()
     }
 
     suspend fun getCart(token: String): CartResponse {

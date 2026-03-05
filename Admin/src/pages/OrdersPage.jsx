@@ -241,6 +241,7 @@ export const OrdersPage = () => {
         isOpen={Boolean(selectedOrder)}
         onClose={() => setSelectedOrder(null)}
         title={`Order #${selectedOrder?._id?.slice(-8) || ""} Details`}
+        maxWidthClass="sm:max-w-5xl"
         footer={
           <Button variant="secondary" onClick={() => setSelectedOrder(null)}>
             Close

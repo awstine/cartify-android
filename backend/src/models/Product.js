@@ -5,6 +5,7 @@ const productSchema = new mongoose.Schema(
     title: { type: String, required: true },
     description: { type: String, default: "" },
     category: { type: String, default: "general" },
+    storeId: { type: mongoose.Schema.Types.ObjectId, ref: "Store", default: null, index: true },
     imageUrl: { type: String, default: "" },
     images: {
       type: [String],

@@ -3,6 +3,7 @@ package com.cartify.ui.screens.product
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
@@ -31,6 +33,8 @@ import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -57,7 +61,9 @@ import com.cartify.ui.theme.AppRadius
 import com.cartify.ui.theme.AppSpacing
 import com.cartify.ui.theme.TextSecondary
 import kotlinx.coroutines.launch
+import java.util.Locale
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ProductDetailsScreen(
     product: Product?,
@@ -86,8 +92,17 @@ fun ProductDetailsScreen(
     }
 
     var selectedColor by remember { mutableStateOf(0) }
-    var selectedSize by remember { mutableStateOf("M") }
+    val availableSizes = remember(product.sizes) {
+        product.sizes
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+    }
+    var selectedSize by remember(product.id, availableSizes) {
+        mutableStateOf(availableSizes.firstOrNull().orEmpty())
+    }
     var selectedReviewStars by remember { mutableStateOf(5) }
+    var relatedSearchQuery by remember { mutableStateOf("") }
     var selectedImageIndex by remember { mutableStateOf(0) }
     val galleryImages = remember(product.imageUrl, product.imageUrls) {
         (product.imageUrls + listOf(product.imageUrl))
@@ -99,6 +114,17 @@ fun ProductDetailsScreen(
     val galleryState = rememberLazyListState()
     val galleryScope = rememberCoroutineScope()
     val inStock = product.stock > 0
+    val filteredRelatedProducts = remember(relatedProducts, relatedSearchQuery) {
+        if (relatedSearchQuery.isBlank()) {
+            relatedProducts
+        } else {
+            relatedProducts.filter {
+                it.title.contains(relatedSearchQuery, ignoreCase = true) ||
+                    it.description.contains(relatedSearchQuery, ignoreCase = true) ||
+                    it.category.contains(relatedSearchQuery, ignoreCase = true)
+            }
+        }
+    }
 
     LaunchedEffect(galleryState.firstVisibleItemIndex) {
         selectedImageIndex = galleryState.firstVisibleItemIndex.coerceIn(0, galleryImages.lastIndex)
@@ -116,23 +142,45 @@ fun ProductDetailsScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(bottom = 124.dp)
     ) {
-        item {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            CircularIconButton(
-                onClick = onBack,
-                icon = { androidx.compose.material3.Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
-            )
-            CircularIconButton(
-                onClick = onToggleFavorite,
-                icon = {
-                    androidx.compose.material3.Icon(
-                        if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                        contentDescription = "Wishlist",
-                        tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+        stickyHeader {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.background)
+                    .padding(vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CircularIconButton(
+                    onClick = onBack,
+                    icon = { androidx.compose.material3.Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                )
+                OutlinedTextField(
+                    value = relatedSearchQuery,
+                    onValueChange = { relatedSearchQuery = it },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    placeholder = { Text("Search related products") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
                     )
-                }
-            )
-        }
+                )
+                CircularIconButton(
+                    onClick = onToggleFavorite,
+                    icon = {
+                        androidx.compose.material3.Icon(
+                            if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                            contentDescription = "Wishlist",
+                            tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                )
+            }
         }
 
         item {
@@ -259,10 +307,12 @@ fun ProductDetailsScreen(
                     }
                 }
 
-                Text("Size", fontWeight = FontWeight.SemiBold)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("S", "M", "L", "XL").forEach { size ->
-                        CategoryPill(text = size, selected = selectedSize == size, onClick = { selectedSize = size })
+                if (availableSizes.isNotEmpty()) {
+                    Text("Size", fontWeight = FontWeight.SemiBold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        availableSizes.forEach { size ->
+                            CategoryPill(text = size, selected = selectedSize == size, onClick = { selectedSize = size })
+                        }
                     }
                 }
 
@@ -271,7 +321,7 @@ fun ProductDetailsScreen(
             }
         }
 
-        if (relatedProducts.isNotEmpty()) {
+        if (filteredRelatedProducts.isNotEmpty()) {
             item {
                 Text(
                     text = "Related Products",
@@ -282,7 +332,7 @@ fun ProductDetailsScreen(
 
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    relatedProducts.chunked(2).forEach { rowProducts ->
+                    filteredRelatedProducts.chunked(2).forEach { rowProducts ->
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -310,6 +360,34 @@ fun ProductDetailsScreen(
                                             overflow = TextOverflow.Ellipsis,
                                             fontWeight = FontWeight.SemiBold
                                         )
+                                        Text(
+                                            previewDescription(related.description, maxWords = 20),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = TextSecondary,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        val relatedRating = related.rating?.rate ?: 0.0
+                                        val relatedStars = relatedRating.toInt().coerceIn(0, 5)
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                        ) {
+                                            repeat(5) { index ->
+                                                Icon(
+                                                    imageVector = if (index < relatedStars) Icons.Default.Star else Icons.Default.StarBorder,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(12.dp)
+                                                )
+                                            }
+                                            Text(
+                                                String.format(Locale.US, "%.1f", relatedRating),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = TextSecondary,
+                                                modifier = Modifier.padding(start = 4.dp)
+                                            )
+                                        }
                                         Text(
                                             if (related.stock > 0) "Stock: ${related.stock}" else "Out of stock",
                                             color = if (related.stock > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
@@ -380,4 +458,10 @@ fun ProductDetailsScreen(
         )
     }
     }
+}
+
+private fun previewDescription(text: String, maxWords: Int = 20): String {
+    val words = text.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+    if (words.size <= maxWords) return words.joinToString(" ")
+    return words.take(maxWords).joinToString(" ") + "..."
 }

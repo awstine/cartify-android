@@ -3,8 +3,10 @@ import { body, validationResult } from "express-validator";
 import mongoose from "mongoose";
 import { requireAuth } from "../middleware/auth.js";
 import { Coupon } from "../models/Coupon.js";
+import { Dispute } from "../models/Dispute.js";
 import { Order } from "../models/Order.js";
 import { Product } from "../models/Product.js";
+import { Store } from "../models/Store.js";
 
 const router = Router();
 router.use(requireAuth);
@@ -25,6 +27,38 @@ router.get("/:id", async (req, res) => {
 
   return res.json(order);
 });
+
+router.post(
+  "/:id/disputes",
+  [body("reason").isString().trim().isLength({ min: 3, max: 200 }), body("message").optional().isString().isLength({ max: 1000 })],
+  async (req, res) => {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "Invalid order id" });
+    }
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ message: "Validation failed", errors: errors.array() });
+    }
+
+    const order = await Order.findOne({ _id: id, userId: req.user.id }).select("_id storeId");
+    if (!order) return res.status(404).json({ message: "Order not found" });
+
+    const existing = await Dispute.findOne({ orderId: order._id, customerUserId: req.user.id, status: { $in: ["open", "in_review"] } });
+    if (existing) return res.status(409).json({ message: "An active dispute already exists for this order" });
+
+    const dispute = await Dispute.create({
+      orderId: order._id,
+      storeId: order.storeId || null,
+      customerUserId: req.user.id,
+      reason: String(req.body.reason || "").trim(),
+      message: String(req.body.message || "").trim(),
+      status: "open",
+    });
+
+    res.status(201).json(dispute);
+  }
+);
 
 router.post(
   "/checkout",
@@ -57,6 +91,7 @@ router.post(
     const items = [];
     const stockAdjustments = [];
     const couponCode = String(req.body.couponCode || "").trim().toUpperCase();
+    const storeOwnerById = new Map();
 
     for (const rawItem of req.body.items) {
       const quantity = Number(rawItem.quantity);
@@ -93,8 +128,20 @@ router.post(
         continue;
       }
 
+      const productStoreId = resolvedProduct.storeId ? String(resolvedProduct.storeId) : null;
+      let merchantUserId = null;
+      if (productStoreId) {
+        if (!storeOwnerById.has(productStoreId)) {
+          const store = await Store.findById(productStoreId).select("ownerUserId");
+          storeOwnerById.set(productStoreId, store?.ownerUserId ? String(store.ownerUserId) : null);
+        }
+        merchantUserId = storeOwnerById.get(productStoreId) || null;
+      }
+
       items.push({
         productId: resolvedProduct._id,
+        storeId: productStoreId,
+        merchantUserId,
         variantSku: variantSku || "",
         title: resolvedProduct.title,
         imageUrl: resolvedProduct.imageUrl || rawItem.imageUrl || "",
@@ -163,27 +210,58 @@ router.post(
       await coupon.save();
     }
 
-    const order = await Order.create({
-      userId: req.user.id,
-      items,
-      subtotal,
-      shipping,
-      tax,
-      discount,
-      total,
-      couponCode: couponCode || "",
-      shippingAddress: req.body.shippingAddress || {},
-      shippingDetails: {
-        courier: "",
-        trackingNumber: "",
-        timeline: [{ label: "Order placed", note: "Order created successfully", at: new Date() }],
-      },
+    const groupedByStore = new Map();
+    items.forEach((item) => {
+      const key = String(item.storeId || "platform");
+      const bucket = groupedByStore.get(key) || [];
+      bucket.push(item);
+      groupedByStore.set(key, bucket);
     });
+
+    const createdOrders = [];
+    for (const [storeKey, itemsByStore] of groupedByStore.entries()) {
+      const subtotalByStore = itemsByStore.reduce((acc, item) => acc + item.lineTotal, 0);
+      const shippingByStore = subtotalByStore > 0 ? 6.99 : 0;
+      const taxByStore = subtotalByStore * 0.08;
+      const discountByStore = subtotal > 0 ? (discount * subtotalByStore) / subtotal : 0;
+      const totalByStore = Math.max(0, subtotalByStore + shippingByStore + taxByStore - discountByStore);
+
+      const order = await Order.create({
+        userId: req.user.id,
+        storeId: storeKey === "platform" ? null : storeKey,
+        merchantUserId: storeKey === "platform" ? null : storeOwnerById.get(String(storeKey)) || null,
+        items: itemsByStore,
+        subtotal: subtotalByStore,
+        shipping: shippingByStore,
+        tax: taxByStore,
+        discount: discountByStore,
+        total: totalByStore,
+        couponCode: couponCode || "",
+        shippingAddress: req.body.shippingAddress || {},
+        shippingDetails: {
+          courier: "",
+          trackingNumber: "",
+          timeline: [{ label: "Order placed", note: "Order created successfully", at: new Date() }],
+        },
+      });
+      createdOrders.push(order);
+    }
+
+    const grandSummary = createdOrders.reduce(
+      (acc, order) => ({
+        subtotal: acc.subtotal + Number(order.subtotal || 0),
+        shipping: acc.shipping + Number(order.shipping || 0),
+        tax: acc.tax + Number(order.tax || 0),
+        discount: acc.discount + Number(order.discount || 0),
+        total: acc.total + Number(order.total || 0),
+      }),
+      { subtotal: 0, shipping: 0, tax: 0, discount: 0, total: 0 }
+    );
 
     return res.status(201).json({
       message: "Checkout complete",
-      orderId: String(order._id),
-      summary: { subtotal, shipping, tax, discount, total },
+      orderIds: createdOrders.map((order) => String(order._id)),
+      summary: grandSummary,
     });
   }
 );

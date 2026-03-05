@@ -23,6 +23,9 @@ const mapCartResponse = (cart, productsById) =>
             category: product.category,
             imageUrl: product.imageUrl,
             price: product.price,
+            storeId: product.storeId?._id ? String(product.storeId._id) : null,
+            storeName: product.storeId?.name || "Marketplace",
+            storeSlug: product.storeId?.slug || "",
           }
         : null,
     };
@@ -33,7 +36,7 @@ router.get("/", async (req, res) => {
   if (!cart) return res.json({ items: [] });
 
   const productIds = cart.items.map((it) => it.productId);
-  const products = await Product.find({ _id: { $in: productIds } });
+  const products = await Product.find({ _id: { $in: productIds } }).populate("storeId", "name slug");
   const productsById = new Map(products.map((p) => [String(p._id), p]));
 
   res.json({ items: mapCartResponse(cart, productsById) });
@@ -111,6 +114,7 @@ router.post("/checkout", async (req, res) => {
 
       return {
         productId: item.productId,
+        storeId: product.storeId || null,
         title: product.title,
         imageUrl: product.imageUrl,
         price: product.price,
@@ -119,27 +123,43 @@ router.post("/checkout", async (req, res) => {
       };
     })
     .filter(Boolean);
-  const subtotal = orderItems.reduce((acc, item) => acc + item.lineTotal, 0);
-  const shipping = subtotal > 0 ? 6.99 : 0;
-  const tax = subtotal * 0.08;
-  const total = subtotal + shipping + tax;
-
-  const order = await Order.create({
-    userId: req.user.id,
-    items: orderItems,
-    subtotal,
-    shipping,
-    tax,
-    total,
+  const groupedByStore = new Map();
+  orderItems.forEach((item) => {
+    const key = String(item.storeId || "platform");
+    const bucket = groupedByStore.get(key) || [];
+    bucket.push(item);
+    groupedByStore.set(key, bucket);
   });
+
+  const orders = [];
+  for (const [storeKey, itemsByStore] of groupedByStore.entries()) {
+    const subtotal = itemsByStore.reduce((acc, item) => acc + item.lineTotal, 0);
+    const shipping = subtotal > 0 ? 6.99 : 0;
+    const tax = subtotal * 0.08;
+    const total = subtotal + shipping + tax;
+    const createdOrder = await Order.create({
+      userId: req.user.id,
+      storeId: storeKey === "platform" ? null : storeKey,
+      items: itemsByStore,
+      subtotal,
+      shipping,
+      tax,
+      total,
+    });
+    orders.push(createdOrder);
+  }
 
   cart.items = [];
   await cart.save();
+  const grandSubtotal = orders.reduce((sum, order) => sum + Number(order.subtotal || 0), 0);
+  const grandShipping = orders.reduce((sum, order) => sum + Number(order.shipping || 0), 0);
+  const grandTax = orders.reduce((sum, order) => sum + Number(order.tax || 0), 0);
+  const grandTotal = orders.reduce((sum, order) => sum + Number(order.total || 0), 0);
 
   return res.json({
     message: "Checkout complete",
-    orderId: String(order._id),
-    summary: { subtotal, shipping, tax, total },
+    orderIds: orders.map((order) => String(order._id)),
+    summary: { subtotal: grandSubtotal, shipping: grandShipping, tax: grandTax, total: grandTotal },
   });
 });
 

@@ -3,6 +3,8 @@ import mongoose from "mongoose";
 const orderItemSchema = new mongoose.Schema(
   {
     productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product", required: false },
+    storeId: { type: mongoose.Schema.Types.ObjectId, ref: "Store", required: false, default: null },
+    merchantUserId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: false, default: null },
     variantSku: { type: String, default: "" },
     title: { type: String, required: true },
     imageUrl: { type: String, default: "" },
@@ -16,6 +18,8 @@ const orderItemSchema = new mongoose.Schema(
 const orderSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    storeId: { type: mongoose.Schema.Types.ObjectId, ref: "Store", default: null, index: true },
+    merchantUserId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null, index: true },
     items: { type: [orderItemSchema], default: [] },
     subtotal: { type: Number, required: true, min: 0 },
     shipping: { type: Number, required: true, min: 0, default: 0 },

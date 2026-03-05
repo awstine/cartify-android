@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, consumePrefetchedGet, prefetchGet } from "../api";
 import { useAuth } from "../auth";
 import { Button } from "../components/ui/Button";
@@ -26,20 +26,40 @@ const renderStars = (rating) => {
 
 export const StoreHomePage = () => {
   const navigate = useNavigate();
+  const { storeSlug } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const { isAuthenticated } = useAuth();
   const { showToast } = useToast();
   const [products, setProducts] = useState([]);
+  const [stores, setStores] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [visibleCount, setVisibleCount] = useState(PRODUCTS_BATCH_SIZE);
   const loadMoreRef = useRef(null);
   const search = (searchParams.get("search") || "").toLowerCase();
   const category = searchParams.get("category") || "all";
+  const selectedStoreSlug = storeSlug || searchParams.get("store") || "all";
+
+  useEffect(() => {
+    let active = true;
+    const loadStores = async () => {
+      try {
+        const data = await prefetchGet("/stores", { ttlMs: 5 * 60_000 });
+        if (active) setStores(data || []);
+      } catch (_err) {
+        if (active) setStores([]);
+      }
+    };
+    loadStores();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     const loadProducts = async () => {
-      const prefetched = consumePrefetchedGet("/products");
+      const productParams = selectedStoreSlug !== "all" ? { storeSlug: selectedStoreSlug } : undefined;
+      const prefetched = consumePrefetchedGet("/products", { params: productParams });
       if (prefetched) {
         setProducts(prefetched || []);
         setLoading(false);
@@ -48,7 +68,7 @@ export const StoreHomePage = () => {
       }
       setError("");
       try {
-        const response = await api.get("/products");
+        const response = await api.get("/products", { params: productParams });
         setProducts(response.data || []);
       } catch (err) {
         setError(err?.response?.data?.message || "Failed to load products");
@@ -57,7 +77,7 @@ export const StoreHomePage = () => {
       }
     };
     loadProducts();
-  }, []);
+  }, [selectedStoreSlug]);
 
   const categories = useMemo(
     () => ["all", ...new Set(products.map((product) => String(product.category || "general")))],
@@ -120,7 +140,19 @@ export const StoreHomePage = () => {
     } catch (_err) {
       // Ignore and navigate anyway.
     }
-    navigate(`/product/${productId}`);
+    const storeQuery = selectedStoreSlug !== "all" ? `?store=${encodeURIComponent(selectedStoreSlug)}` : "";
+    navigate(`/product/${productId}${storeQuery}`);
+  };
+
+  const applyStoreFilter = (slug) => {
+    const params = new URLSearchParams(searchParams);
+    params.delete("store");
+    const query = params.toString();
+    if (!slug || slug === "all") {
+      navigate(`/${query ? `?${query}` : ""}`);
+      return;
+    }
+    navigate(`/store/${slug}${query ? `?${query}` : ""}`);
   };
 
   if (loading) return <LoadingState label="Loading products..." showSpinner={false} />;
@@ -130,7 +162,40 @@ export const StoreHomePage = () => {
     <div>
       <section className="mb-5">
         <h1 className="font-heading text-2xl font-bold text-slate-900">Shop Products</h1>
-        <p className="mt-1 text-sm text-slate-600">Browse products, filter by category, and place orders.</p>
+        <p className="mt-1 text-sm text-slate-600">
+          {selectedStoreSlug === "all"
+            ? "Browse products by store, filter by category, and place orders."
+            : `Store mode: ${selectedStoreSlug}. Products and categories are limited to this store.`}
+        </p>
+        <div className="mt-3 overflow-x-auto">
+          <div className="flex min-w-max gap-2 pb-1">
+            <button
+              type="button"
+              onClick={() => applyStoreFilter("all")}
+              className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                selectedStoreSlug === "all"
+                  ? "border-primary bg-primary text-white"
+                  : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+              }`}
+            >
+              All Stores
+            </button>
+            {stores.map((store) => (
+              <button
+                key={store._id}
+                type="button"
+                onClick={() => applyStoreFilter(store.slug)}
+                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                  selectedStoreSlug === store.slug
+                    ? "border-primary bg-primary text-white"
+                    : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                }`}
+              >
+                {store.name}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="mt-3 overflow-x-auto">
           <div className="flex min-w-max gap-2 pb-1">
             {categories.map((item) => {

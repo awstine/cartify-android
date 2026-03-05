@@ -7,6 +7,7 @@ import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.DELETE
 import retrofit2.http.Path
+import retrofit2.http.Query
 
 interface BackendApiService {
 
@@ -17,7 +18,12 @@ interface BackendApiService {
     suspend fun login(@Body body: AuthRequest): AuthResponse
 
     @GET("products")
-    suspend fun getProducts(): List<BackendProduct>
+    suspend fun getProducts(
+        @Query("storeSlug") storeSlug: String? = null
+    ): List<BackendProduct>
+
+    @GET("stores")
+    suspend fun getStores(): List<BackendStore>
 
     @GET("cart")
     suspend fun getCart(@Header("Authorization") bearerToken: String): CartResponse

@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 
 const couponSchema = new mongoose.Schema(
   {
+    storeId: { type: mongoose.Schema.Types.ObjectId, ref: "Store", default: null, index: true },
     code: { type: String, required: true, unique: true, uppercase: true, trim: true, index: true },
     description: { type: String, default: "" },
     discountType: { type: String, enum: ["percent", "fixed"], default: "percent" },

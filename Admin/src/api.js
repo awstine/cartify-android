@@ -1,7 +1,22 @@
 import axios from "axios";
 import { startLoadingProgress } from "./loadingProgress";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://ecommerce-adroid-app.onrender.com/api";
+const resolveApiBaseUrl = () => {
+  const configured = String(import.meta.env.VITE_API_BASE_URL || "").trim();
+  if (configured) return configured;
+
+  if (import.meta.env.DEV) {
+    return "http://localhost:4000/api";
+  }
+
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return `${window.location.origin}/api`;
+  }
+
+  return "/api";
+};
+
+const API_BASE_URL = resolveApiBaseUrl();
 const AUTH_STORAGE_KEY = "cartify_admin_auth";
 const DEFAULT_PREFETCH_TTL_MS = 30_000;
 const prefetchCache = new Map();

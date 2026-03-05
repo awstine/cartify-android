@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -43,7 +44,7 @@ fun BottomNavigationBar(
     val items = listOf(
         NavigationItem.Products,
         NavigationItem.Categories,
-        NavigationItem.Wishlist,
+        NavigationItem.Stores,
         NavigationItem.Cart,
         NavigationItem.Profile
     )
@@ -96,6 +97,7 @@ sealed class NavigationItem(var route: String, var icon: ImageVector, var title:
     object Checkout : NavigationItem("checkout", Icons.Filled.CreditCard, "Checkout")
     object CheckoutSuccess : NavigationItem("checkout_success", Icons.Filled.Info, "Checkout Success")
     object Orders : NavigationItem("orders", Icons.Filled.Inventory2, "Orders")
+    object Stores : NavigationItem("stores", Icons.Filled.Storefront, "Stores")
     object Offers : NavigationItem("offers", Icons.Filled.LocalOffer, "Offers")
     object Settings : NavigationItem("settings", Icons.Filled.Settings, "Settings")
     object Help : NavigationItem("help", Icons.Filled.HelpOutline, "Help")

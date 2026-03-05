@@ -9,6 +9,7 @@ import orderRoutes from "./routes/orders.js";
 import wishlistRoutes from "./routes/wishlist.js";
 import userRoutes from "./routes/users.js";
 import adminRoutes from "./routes/admin.js";
+import storeRoutes from "./routes/stores.js";
 
 const app = express();
 app.use(cors());
@@ -35,6 +36,7 @@ app.use("/api/orders", orderRoutes);
 app.use("/api/wishlist", wishlistRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/stores", storeRoutes);
 
 app.use((err, _req, res, _next) => {
   console.error(err);

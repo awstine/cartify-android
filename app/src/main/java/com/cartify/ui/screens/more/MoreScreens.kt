@@ -34,6 +34,8 @@ import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Payment
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -43,6 +45,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
@@ -68,6 +71,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.cartify.data.remote.backend.BackendOrder
+import com.cartify.data.remote.backend.BackendStore
+import com.cartify.data.model.Product
 import com.cartify.data.remote.backend.WishlistItem
 import com.cartify.data.remote.backend.UserProfileResponse
 import com.cartify.data.repository.BackendRepository
@@ -82,7 +87,11 @@ import java.util.Locale
 fun CategoriesScreen(
     categories: List<String>,
     categoryImages: Map<String, String> = emptyMap(),
-    onCategoryClick: (String) -> Unit = {}
+    onCategoryClick: (String) -> Unit = {},
+    storeModeLabel: String? = null,
+    storeModeError: String? = null,
+    onRetryStoreMode: () -> Unit = {},
+    onBackToMarket: () -> Unit = {}
 ) {
     var searchQuery by remember { mutableStateOf("") }
     val visibleCategories = categories
@@ -98,6 +107,40 @@ fun CategoriesScreen(
             .background(MaterialTheme.colorScheme.background)
             .padding(16.dp)
     ) {
+        if (!storeModeLabel.isNullOrBlank()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Store: $storeModeLabel",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold
+                )
+                TextButton(onClick = onBackToMarket) { Text("Back to market") }
+            }
+            if (!storeModeError.isNullOrBlank()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        storeModeError,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = onRetryStoreMode) { Text("Retry") }
+                }
+            }
+        }
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
@@ -214,413 +257,318 @@ fun ProfileScreen(
     onProfileUpdated: (UserProfileResponse) -> Unit = {},
     onAccountDeleted: () -> Unit = {},
     onOpenOrders: () -> Unit = {},
-    onLogout: () -> Unit = {}
+    onLogout: () -> Unit = {},
+    isLoggedIn: Boolean = false,
+    products: List<Product> = emptyList(),
+    onProductClick: (Int) -> Unit = {},
+    onLoginRequested: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
+    onOpenWishlist: () -> Unit = {},
+    onOpenStores: () -> Unit = {},
+    storeModeLabel: String? = null,
+    storeModeError: String? = null,
+    onRetryStoreMode: () -> Unit = {},
+    onBackToMarket: () -> Unit = {}
 ) {
-    val repository = remember { BackendRepository() }
-    val scope = rememberCoroutineScope()
-    val context = LocalContext.current
-    var selectedImageRef by remember { mutableStateOf(profileImageUrl?.trim().orEmpty()) }
-    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
-            runCatching {
-                context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            selectedImageRef = uri.toString()
-        }
-    }
-    val dynamicState by produceState(
-        initialValue = ProfileUiState(),
-        token, displayName, email, profileImageUrl
-    ) {
-        val authToken = token?.trim().orEmpty()
-        if (authToken.isBlank()) {
-            value = ProfileUiState(
-                name = displayName?.ifBlank { "Cartify User" } ?: "Cartify User",
-                email = email?.ifBlank { "Signed in user" } ?: "Signed in user",
-                profileImageUrl = profileImageUrl?.trim().orEmpty(),
-                isLoading = false
-            )
-            return@produceState
-        }
-
-        val fallbackName = displayName?.ifBlank { "Cartify User" } ?: "Cartify User"
-        val fallbackEmail = email?.ifBlank { "Signed in user" } ?: "Signed in user"
-        val fallbackImageUrl = profileImageUrl?.trim().orEmpty()
-
-        value = runCatching {
-            val profile = repository.getProfile(authToken)
-            val orders = repository.getOrders(authToken)
-            val wishlist = repository.getWishlist(authToken)
-            ProfileUiState(
-                name = profile.name.ifBlank { fallbackName },
-                email = profile.email.ifBlank { fallbackEmail },
-                profileImageUrl = profile.profileImageUrl?.trim().orEmpty().ifBlank { fallbackImageUrl },
-                memberSince = profile.createdAt?.take(10) ?: "N/A",
-                ordersCount = orders.size,
-                wishlistCount = wishlist.items.size,
-                notificationsEnabled = profile.preferences?.notificationsEnabled ?: initialNotificationsEnabled,
-                darkModeEnabled = profile.preferences?.darkModeEnabled ?: initialDarkModeEnabled,
-                isLoading = false
-            )
-        }.getOrElse {
-            ProfileUiState(
-                name = fallbackName,
-                email = fallbackEmail,
-                profileImageUrl = fallbackImageUrl,
-                notificationsEnabled = initialNotificationsEnabled,
-                darkModeEnabled = initialDarkModeEnabled,
-                isLoading = false,
-                error = it.message ?: "Unable to load profile details"
-            )
-        }
-    }
-
-    var notificationsEnabled by remember(dynamicState.notificationsEnabled) { mutableStateOf(dynamicState.notificationsEnabled) }
-    var darkModeEnabled by remember(dynamicState.darkModeEnabled) { mutableStateOf(dynamicState.darkModeEnabled) }
-    var editableName by remember(dynamicState.name) { mutableStateOf(dynamicState.name) }
-    var editableEmail by remember(dynamicState.email) { mutableStateOf(dynamicState.email) }
-    var actionMessage by remember { mutableStateOf<String?>(null) }
-    var actionError by remember { mutableStateOf<String?>(null) }
-    var isSaving by remember { mutableStateOf(false) }
-    var isDeleting by remember { mutableStateOf(false) }
-    var revealSections by remember { mutableStateOf(false) }
-
-    LaunchedEffect(dynamicState.profileImageUrl) {
-        if (selectedImageRef.isBlank() && dynamicState.profileImageUrl.isNotBlank()) {
-            selectedImageRef = dynamicState.profileImageUrl
-        }
-    }
-
-    LaunchedEffect(darkModeEnabled) {
-        onDarkModeChanged(darkModeEnabled)
-    }
-
-    LaunchedEffect(notificationsEnabled) {
-        onNotificationsChanged(notificationsEnabled)
-    }
-
-    LaunchedEffect(Unit) {
-        revealSections = true
-    }
-
-    fun persistPreferences() {
-        onNotificationsChanged(notificationsEnabled)
-        onDarkModeChanged(darkModeEnabled)
-        val authToken = token?.trim().orEmpty()
-        if (authToken.isBlank()) return
-
-        scope.launch {
-            val uploadableImageUrl = if (
-                selectedImageRef.startsWith("http://") || selectedImageRef.startsWith("https://")
-            ) {
-                selectedImageRef
-            } else {
-                dynamicState.profileImageUrl.takeIf { it.startsWith("http://") || it.startsWith("https://") } ?: ""
-            }
-            runCatching {
-                repository.updateProfile(
-                    token = authToken,
-                    name = editableName.trim(),
-                    email = editableEmail.trim(),
-                    profileImageUrl = uploadableImageUrl,
-                    notificationsEnabled = notificationsEnabled,
-                    darkModeEnabled = darkModeEnabled
-                )
-            }.onSuccess { updated ->
-                onProfileUpdated(updated.copy(profileImageUrl = selectedImageRef.ifBlank { updated.profileImageUrl }))
-            }
-        }
+    val profileName = displayName?.trim().orEmpty().ifBlank { "Guest User" }
+    val profileEmail = email?.trim().orEmpty().ifBlank { "Browse products and add to cart" }
+    val randomBaseProducts = remember(products) { products.shuffled() }
+    var visibleCount by remember(products) { mutableStateOf(12) }
+    val feedProducts = remember(randomBaseProducts, visibleCount) {
+        randomBaseProducts.take(visibleCount.coerceAtMost(randomBaseProducts.size))
     }
 
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background),
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        item {
-            ProfileSection(visible = revealSections, delayMillis = 0) {
-                GlassCard {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.09f))
-                            .padding(horizontal = 18.dp, vertical = 16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+        if (!storeModeLabel.isNullOrBlank()) {
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Store: $storeModeLabel",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    TextButton(onClick = onBackToMarket) { Text("Back to market") }
+                }
+                if (!storeModeError.isNullOrBlank()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            "Personal Hub",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.SemiBold
+                            storeModeError,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.weight(1f)
                         )
-                        Box(
-                            modifier = Modifier
-                                .scale(if (revealSections) 1f else 0.94f)
-                                .size(86.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (selectedImageRef.isNotBlank()) {
-                                AsyncImage(
-                                    model = ImageRequest.Builder(LocalContext.current)
-                                        .data(selectedImageRef)
-                                        .crossfade(true)
-                                        .build(),
-                                    contentDescription = "Profile image",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier
-                                        .size(86.dp)
-                                        .clip(CircleShape)
-                                )
-                            } else {
+                        TextButton(onClick = onRetryStoreMode) { Text("Retry") }
+                    }
+                }
+            }
+        }
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            ProductImage(
+                                model = profileImageUrl?.trim().orEmpty(),
+                                contentDescription = "Profile image",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+                            )
+                            Column {
+                                Text(profileName, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
                                 Text(
-                                    dynamicState.initial,
-                                    style = MaterialTheme.typography.headlineMedium,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    fontWeight = FontWeight.ExtraBold
+                                    profileEmail,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
 
-                        Text(
-                            editableName,
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.ExtraBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            editableEmail,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            ProfileMetricChip("Orders", dynamicState.ordersCount.toString(), Modifier.weight(1f))
-                            ProfileMetricChip("Wishlist", dynamicState.wishlistCount.toString(), Modifier.weight(1f))
-                            ProfileMetricChip("Member", dynamicState.memberSince.take(4), Modifier.weight(1f))
-                        }
-
-                        if (!dynamicState.error.isNullOrBlank()) {
-                            Text(
-                                dynamicState.error ?: "",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            TextButton(onClick = { if (isLoggedIn) onLogout() else onLoginRequested() }) {
+                                Text(if (isLoggedIn) "Logout" else "Login")
+                            }
+                            Icon(
+                                imageVector = Icons.Default.GridView,
+                                contentDescription = "Settings",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier
+                                    .clip(CircleShape)
+                                    .clickable(onClick = onOpenSettings)
+                                    .padding(6.dp)
                             )
                         }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        QuickProfileItem("Wishlist", onOpenWishlist)
+                        QuickProfileItem("Followed")
+                        QuickProfileItem("Stores", onOpenStores)
+                        QuickProfileItem("Recent")
                     }
                 }
             }
         }
 
         item {
-            ProfileSection(visible = revealSections, delayMillis = 70) {
-                GlassCard {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("My Orders", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
-                        Text("Controls", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Notifications", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                            Switch(
-                                checked = notificationsEnabled,
-                                onCheckedChange = {
-                                    notificationsEnabled = it
-                                    persistPreferences()
-                                }
-                            )
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Dark mode", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                            Switch(
-                                checked = darkModeEnabled,
-                                onCheckedChange = {
-                                    darkModeEnabled = it
-                                    persistPreferences()
-                                }
-                            )
-                        }
-                        ProfileActionButton(
-                            text = "Open Orders",
-                            icon = Icons.Default.ReceiptLong,
-                            onClick = onOpenOrders,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            ProfileActionButton(
-                                text = "Upload Photo",
-                                icon = Icons.Default.LocationOn,
-                                onClick = { imagePicker.launch(arrayOf("image/*")) },
-                                modifier = Modifier.weight(1f)
-                            )
-                            ProfileActionButton(
-                                text = "Clear Photo",
-                                icon = Icons.Default.DeleteOutline,
-                                onClick = { selectedImageRef = "" },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
+                        OrderShortcutItem("Unpaid", onOpenOrders)
+                        OrderShortcutItem("Paid", onOpenOrders)
+                        OrderShortcutItem("To ship", onOpenOrders)
+                        OrderShortcutItem("Return", onOpenOrders)
                     }
                 }
             }
         }
 
         item {
-            ProfileSection(visible = revealSections, delayMillis = 130) {
-                GlassCard {
-                    Column(
+            Text(
+                "Products For You",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+            )
+        }
+
+        if (feedProducts.isEmpty()) {
+            item { AppEmptyState("No products", "Products will appear here when available.") }
+        } else {
+            val rows = feedProducts.chunked(2)
+            items(rows.size) { rowIndex ->
+                val rowProducts = rows[rowIndex]
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    rowProducts.forEach { product ->
+                        ProfileProductCard(
+                            product = product,
+                            modifier = Modifier.weight(1f),
+                            onClick = { onProductClick(product.id) }
+                        )
+                    }
+                    if (rowProducts.size == 1) Spacer(modifier = Modifier.weight(1f))
+                }
+            }
+            if (visibleCount < randomBaseProducts.size) {
+                item(key = "profile-load-more") {
+                    LaunchedEffect(visibleCount, randomBaseProducts.size) {
+                        visibleCount = (visibleCount + 10).coerceAtMost(randomBaseProducts.size)
+                    }
+                    Text(
+                        "Loading more products...",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Text("Edit Identity", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                        AppTextInput(
-                            value = editableName,
-                            onValueChange = { editableName = it },
-                            label = "Full name"
-                        )
-                        AppTextInput(
-                            value = editableEmail,
-                            onValueChange = { editableEmail = it },
-                            label = "Email address"
-                        )
-                        Text(
-                            "Member since ${dynamicState.memberSince}",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        ProfileActionButton(
-                            text = if (isSaving) "Saving..." else "Save changes",
-                            icon = Icons.Default.Payment,
-                            enabled = !isSaving && !isDeleting,
-                            onClick = {
-                                actionError = null
-                                actionMessage = null
-                                val authToken = token?.trim().orEmpty()
-                                if (authToken.isBlank()) {
-                                    actionError = "Session expired. Sign in again."
-                                    return@ProfileActionButton
-                                }
-                                if (editableName.trim().length < 2) {
-                                    actionError = "Name must have at least 2 characters"
-                                    return@ProfileActionButton
-                                }
-                                if (!editableEmail.contains("@")) {
-                                    actionError = "Enter a valid email"
-                                    return@ProfileActionButton
-                                }
-
-                                isSaving = true
-                                scope.launch {
-                                    val uploadableImageUrl = if (
-                                        selectedImageRef.startsWith("http://") || selectedImageRef.startsWith("https://")
-                                    ) {
-                                        selectedImageRef
-                                    } else {
-                                        dynamicState.profileImageUrl.takeIf {
-                                            it.startsWith("http://") || it.startsWith("https://")
-                                        } ?: ""
-                                    }
-                                    runCatching {
-                                        repository.updateProfile(
-                                            token = authToken,
-                                            name = editableName.trim(),
-                                            email = editableEmail.trim(),
-                                            profileImageUrl = uploadableImageUrl,
-                                            notificationsEnabled = notificationsEnabled,
-                                            darkModeEnabled = darkModeEnabled
-                                        )
-                                    }
-                                        .onSuccess { updated ->
-                                            onProfileUpdated(updated.copy(profileImageUrl = selectedImageRef.ifBlank { updated.profileImageUrl }))
-                                            actionMessage = "Profile updated"
-                                        }
-                                        .onFailure {
-                                            actionError = it.message ?: "Unable to update profile"
-                                        }
-                                    isSaving = false
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        if (!actionMessage.isNullOrBlank()) {
-                            Text(actionMessage ?: "", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
-                        }
-                        if (!actionError.isNullOrBlank()) {
-                            Text(actionError ?: "", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
+                            .padding(vertical = 8.dp)
+                    )
                 }
             }
         }
+    }
+}
 
-        item {
-            ProfileSection(visible = revealSections, delayMillis = 190) {
-                GlassCard {
-                    Column(
+@Composable
+private fun QuickProfileItem(title: String, onClick: (() -> Unit)? = null) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
+    ) {
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = title,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(16.dp)
+            )
+        }
+        Text(title, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+fun StoresScreen(
+    stores: List<BackendStore>,
+    selectedStoreSlug: String? = null,
+    isLoading: Boolean = false,
+    errorMessage: String? = null,
+    onRetry: () -> Unit = {},
+    onStoreClick: (BackendStore) -> Unit = {},
+    onBackToMarket: () -> Unit = {}
+) {
+    val activeStores = stores.filter { it.isActive }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(16.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Stores", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            if (!selectedStoreSlug.isNullOrBlank()) {
+                TextButton(onClick = onBackToMarket) { Text("Back to market") }
+            }
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        if (isLoading) {
+            Text("Loading stores...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else if (!errorMessage.isNullOrBlank()) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(errorMessage, color = MaterialTheme.colorScheme.error)
+                TextButton(onClick = onRetry) { Text("Retry") }
+            }
+        } else if (activeStores.isEmpty()) {
+            AppEmptyState("No stores", "Stores will appear here.")
+        } else {
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(activeStores, key = { it.id }) { store ->
+                    val selected = selectedStoreSlug == store.slug
+                    Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Text("Danger Zone", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                        Text(
-                            "Deleting your account removes profile and shopping history.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            .clickable { onStoreClick(store) },
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (selected) {
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+                            } else {
+                                MaterialTheme.colorScheme.surface
+                            }
                         )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            ProfileActionButton(
-                                text = if (isDeleting) "Deleting..." else "Delete account",
-                                icon = Icons.Default.DeleteOutline,
-                                enabled = !isDeleting && !isSaving,
-                                onClick = {
-                                    val authToken = token?.trim().orEmpty()
-                                    if (authToken.isBlank()) {
-                                        actionError = "Session expired. Sign in again."
-                                        return@ProfileActionButton
-                                    }
-                                    isDeleting = true
-                                    scope.launch {
-                                        runCatching { repository.deleteAccount(authToken) }
-                                            .onSuccess {
-                                                onAccountDeleted()
-                                            }
-                                            .onFailure {
-                                                actionError = it.message ?: "Unable to delete account"
-                                            }
-                                        isDeleting = false
-                                    }
-                                },
-                                modifier = Modifier.weight(1f),
-                                danger = true
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            ProductImage(
+                                model = store.logoUrl.orEmpty(),
+                                contentDescription = store.name,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
                             )
-                            ProfileActionButton(
-                                text = "Logout",
-                                icon = Icons.Default.ChevronRight,
-                                onClick = onLogout,
-                                modifier = Modifier.weight(1f)
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(store.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    store.description?.ifBlank { "Open store" } ?: "Open store",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Icon(
+                                imageVector = Icons.Default.ChevronRight,
+                                contentDescription = "Open ${store.name}",
+                                tint = MaterialTheme.colorScheme.primary
                             )
                         }
                     }
@@ -630,6 +578,103 @@ fun ProfileScreen(
     }
 }
 
+@Composable
+private fun OrderShortcutItem(title: String, onClick: () -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier.clickable(onClick = onClick)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(30.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.ReceiptLong,
+                contentDescription = title,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(16.dp)
+            )
+        }
+        Text(title, style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+@Composable
+private fun ProfileProductCard(
+    product: Product,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(
+            modifier = Modifier.padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            ProductImage(
+                model = product.imageUrl,
+                contentDescription = product.title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(112.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+            )
+            Text(
+                product.title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                "KSh ${"%.2f".format(product.price)}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                product.description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            val rating = product.rating?.rate ?: 0.0
+            val filledStars = rating.toInt().coerceIn(0, 5)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                repeat(5) { index ->
+                    Icon(
+                        imageVector = if (index < filledStars) Icons.Default.Star else Icons.Default.StarBorder,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(13.dp)
+                    )
+                }
+                Text(
+                    String.format(Locale.US, "%.1f", rating),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 4.dp)
+                )
+            }
+            Text(
+                if (product.stock > 0) "Stock: ${product.stock}" else "Out of stock",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (product.stock > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+            )
+        }
+    }
+}
 @Composable
 private fun ProfileSection(
     visible: Boolean,
@@ -784,6 +829,7 @@ private fun ProfileItemRow(
 @Composable
 fun WishlistScreen(
     token: String?,
+    activeStoreSlug: String? = null,
     onProductClick: (String) -> Unit = {},
     onWishlistChanged: (Set<String>) -> Unit = {}
 ) {
@@ -801,9 +847,16 @@ fun WishlistScreen(
         state = runCatching { repository.getWishlist(authToken) }
             .fold(
                 onSuccess = { wishlist ->
+                    val scopedItems = if (activeStoreSlug.isNullOrBlank()) {
+                        wishlist.items
+                    } else {
+                        wishlist.items.filter { item ->
+                            item.product?.storeSlug?.equals(activeStoreSlug, ignoreCase = true) == true
+                        }
+                    }
                     val ids = wishlist.items.map { it.productId }.toSet()
                     onWishlistChanged(ids)
-                    WishlistUiState(items = wishlist.items)
+                    WishlistUiState(items = scopedItems)
                 },
                 onFailure = { WishlistUiState(error = it.message ?: "Unable to load wishlist") }
             )

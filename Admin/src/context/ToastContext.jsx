@@ -12,10 +12,10 @@ export const ToastProvider = ({ children }) => {
   }, []);
 
   const showToast = useCallback(
-    ({ title, message = "", type = "info", duration = 3000 }) => {
+    ({ title, message = "", type = "info", duration = 1000 }) => {
       const id = nextToastId++;
       setToasts((prev) => [...prev, { id, title, message, type }]);
-      window.setTimeout(() => dismissToast(id), duration);
+      window.setTimeout(() => dismissToast(id), Math.min(Number(duration) || 1000, 1000));
     },
     [dismissToast]
   );

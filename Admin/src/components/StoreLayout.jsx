@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api, prefetchGet } from "../api";
 import { useAuth } from "../auth";
+import { resolveStoreSlugFromLocation, withStoreQuery } from "../storeMode";
 import { Button } from "./ui/Button";
 import { Drawer } from "./ui/Drawer";
 import { Input } from "./ui/Field";
 
-const STAFF_ROLES = ["support", "manager", "admin", "super_admin"];
+const STAFF_ROLES = ["merchant", "support", "manager", "admin", "super_admin"];
 
 export const StoreLayout = ({ children }) => {
   const location = useLocation();
@@ -19,6 +20,7 @@ export const StoreLayout = ({ children }) => {
   const [categories, setCategories] = useState([]);
   const [searchText, setSearchText] = useState(searchParams.get("search") || "");
   const [categoryMenuOpen, setCategoryMenuOpen] = useState(false);
+  const currentStoreSlug = resolveStoreSlugFromLocation(location.pathname, searchParams);
 
   useEffect(() => {
     let active = true;
@@ -45,7 +47,8 @@ export const StoreLayout = ({ children }) => {
     let active = true;
     const loadCategories = async () => {
       try {
-        const response = await api.get("/products");
+        const params = currentStoreSlug ? { storeSlug: currentStoreSlug } : undefined;
+        const response = await api.get("/products", { params });
         if (!active) return;
         const unique = [...new Set((response.data || []).map((item) => String(item.category || "general")))].filter(Boolean);
         setCategories(unique.sort((a, b) => a.localeCompare(b)));
@@ -57,7 +60,7 @@ export const StoreLayout = ({ children }) => {
     return () => {
       active = false;
     };
-  }, []);
+  }, [currentStoreSlug]);
 
   useEffect(() => {
     setSearchText(searchParams.get("search") || "");
@@ -66,8 +69,9 @@ export const StoreLayout = ({ children }) => {
   const canAccessAdmin = useMemo(() => STAFF_ROLES.includes(user?.role || ""), [user?.role]);
   const selectedCategory = searchParams.get("category") || "all";
   const prefetchStore = (target, { withProgress = false } = {}) => {
+    const productParams = currentStoreSlug ? { storeSlug: currentStoreSlug } : undefined;
     const tasks = {
-      shop: [prefetchGet("/products", { withProgress })],
+      shop: [prefetchGet("/products", { params: productParams, withProgress })],
       cart: [prefetchGet("/cart", { withProgress })],
       orders: [prefetchGet("/orders", { withProgress })],
       profile: [prefetchGet("/users/me", { withProgress })],
@@ -92,7 +96,8 @@ export const StoreLayout = ({ children }) => {
     const nextCategory = category !== undefined ? category : searchParams.get("category") || "all";
     if (nextSearch) params.set("search", nextSearch);
     if (nextCategory && nextCategory !== "all") params.set("category", nextCategory);
-    const destination = `/${params.toString() ? `?${params.toString()}` : ""}`;
+    const basePath = currentStoreSlug ? `/store/${currentStoreSlug}` : "/";
+    const destination = `${basePath}${params.toString() ? `?${params.toString()}` : ""}`;
     navigateWithStorePrefetch(destination, "shop");
   };
 
@@ -113,18 +118,39 @@ export const StoreLayout = ({ children }) => {
           <Link to="/" className="font-heading text-xl font-bold text-slate-900">
             Cartify
           </Link>
+          {currentStoreSlug ? (
+            <Button
+              variant="ghost"
+              className="hidden sm:inline-flex"
+              onClick={() => navigateWithStorePrefetch("/", "shop")}
+            >
+              Back to Market
+            </Button>
+          ) : null}
           <nav className="ml-4 hidden items-center gap-4 text-sm text-slate-700 lg:flex">
             <Link
-              to="/"
+              to={currentStoreSlug ? `/store/${currentStoreSlug}` : "/"}
               onMouseEnter={() => prefetchStore("shop")}
               onFocus={() => prefetchStore("shop")}
               onClick={(event) => {
                 event.preventDefault();
-                navigateWithStorePrefetch("/", "shop");
+                navigateWithStorePrefetch(currentStoreSlug ? `/store/${currentStoreSlug}` : "/", "shop");
               }}
               className="hover:text-slate-900"
             >
               Shop
+            </Link>
+            <Link
+              to="/stores"
+              onMouseEnter={() => prefetchGet("/stores")}
+              onFocus={() => prefetchGet("/stores")}
+              onClick={(event) => {
+                event.preventDefault();
+                navigate("/stores");
+              }}
+              className="hover:text-slate-900"
+            >
+              Stores
             </Link>
             <div className="group relative">
               <button
@@ -170,33 +196,45 @@ export const StoreLayout = ({ children }) => {
             {isAuthenticated ? (
               <>
                 <Link
-                  to="/my-orders"
+                  to={withStoreQuery("/my-orders", currentStoreSlug)}
                   onMouseEnter={() => prefetchStore("orders")}
                   onFocus={() => prefetchStore("orders")}
                   onClick={(event) => {
                     event.preventDefault();
-                    navigateWithStorePrefetch("/my-orders", "orders");
+                    navigateWithStorePrefetch(withStoreQuery("/my-orders", currentStoreSlug), "orders");
                   }}
                   className="hover:text-slate-900"
                 >
                   My Orders
                 </Link>
                 <Link
-                  to="/cart"
+                  to={withStoreQuery("/cart", currentStoreSlug)}
                   onMouseEnter={() => prefetchStore("cart")}
                   onFocus={() => prefetchStore("cart")}
                   onClick={(event) => {
                     event.preventDefault();
-                    navigateWithStorePrefetch("/cart", "cart");
+                    navigateWithStorePrefetch(withStoreQuery("/cart", currentStoreSlug), "cart");
                   }}
                   className="hover:text-slate-900"
                 >
                   Cart ({cartCount})
                 </Link>
+                <Link
+                  to={withStoreQuery("/profile", currentStoreSlug)}
+                  onMouseEnter={() => prefetchStore("profile")}
+                  onFocus={() => prefetchStore("profile")}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    navigateWithStorePrefetch(withStoreQuery("/profile", currentStoreSlug), "profile");
+                  }}
+                  className="hover:text-slate-900"
+                >
+                  Profile
+                </Link>
               </>
             ) : null}
           </nav>
-          {location.pathname === "/" ? (
+          {location.pathname === "/" || location.pathname.startsWith("/store/") ? (
             <form
               className="ml-2 hidden w-full max-w-md items-center gap-2 lg:flex"
               onSubmit={(event) => {
@@ -224,7 +262,7 @@ export const StoreLayout = ({ children }) => {
             ) : null}
             <button
               type="button"
-              onClick={() => navigateWithStorePrefetch("/cart", "cart")}
+              onClick={() => navigateWithStorePrefetch(withStoreQuery("/cart", currentStoreSlug), "cart")}
               onMouseEnter={() => prefetchStore("cart")}
               onFocus={() => prefetchStore("cart")}
               className="relative rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50"
@@ -261,26 +299,39 @@ export const StoreLayout = ({ children }) => {
                   <>
                     <p className="truncate px-2 py-1 text-sm font-medium text-slate-800">{user?.email}</p>
                     <Link
-                      to="/my-orders"
+                      to={withStoreQuery("/my-orders", currentStoreSlug)}
                       onMouseEnter={() => prefetchStore("orders")}
                       onFocus={() => prefetchStore("orders")}
                       onClick={(event) => {
                         event.preventDefault();
                         setMenuOpen(false);
-                        navigateWithStorePrefetch("/my-orders", "orders");
+                        navigateWithStorePrefetch(withStoreQuery("/my-orders", currentStoreSlug), "orders");
                       }}
                       className="block rounded-lg px-2 py-1.5 text-sm hover:bg-slate-100"
                     >
                       My Orders
                     </Link>
                     <Link
-                      to="/cart"
+                      to={withStoreQuery("/profile", currentStoreSlug)}
+                      onMouseEnter={() => prefetchStore("profile")}
+                      onFocus={() => prefetchStore("profile")}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        setMenuOpen(false);
+                        navigateWithStorePrefetch(withStoreQuery("/profile", currentStoreSlug), "profile");
+                      }}
+                      className="block rounded-lg px-2 py-1.5 text-sm hover:bg-slate-100"
+                    >
+                      Profile
+                    </Link>
+                    <Link
+                      to={withStoreQuery("/cart", currentStoreSlug)}
                       onMouseEnter={() => prefetchStore("cart")}
                       onFocus={() => prefetchStore("cart")}
                       onClick={(event) => {
                         event.preventDefault();
                         setMenuOpen(false);
-                        navigateWithStorePrefetch("/cart", "cart");
+                        navigateWithStorePrefetch(withStoreQuery("/cart", currentStoreSlug), "cart");
                       }}
                       className="block rounded-lg px-2 py-1.5 text-sm hover:bg-slate-100"
                     >
@@ -335,34 +386,47 @@ export const StoreLayout = ({ children }) => {
           <p className="font-medium text-slate-700">Cartify</p>
           <div className="flex flex-wrap items-center gap-4">
             <Link
-              to="/"
+              to={currentStoreSlug ? `/store/${currentStoreSlug}` : "/"}
               className="hover:text-slate-900"
               onClick={(event) => {
                 event.preventDefault();
-                navigateWithStorePrefetch("/", "shop");
+                navigateWithStorePrefetch(currentStoreSlug ? `/store/${currentStoreSlug}` : "/", "shop");
               }}
             >
               Shop
             </Link>
+            <Link to="/stores" className="hover:text-slate-900">
+              Stores
+            </Link>
             <Link
-              to="/cart"
+              to={withStoreQuery("/cart", currentStoreSlug)}
               className="hover:text-slate-900"
               onClick={(event) => {
                 event.preventDefault();
-                navigateWithStorePrefetch("/cart", "cart");
+                navigateWithStorePrefetch(withStoreQuery("/cart", currentStoreSlug), "cart");
               }}
             >
               Cart
             </Link>
             <Link
-              to="/my-orders"
+              to={withStoreQuery("/my-orders", currentStoreSlug)}
               className="hover:text-slate-900"
               onClick={(event) => {
                 event.preventDefault();
-                navigateWithStorePrefetch("/my-orders", "orders");
+                navigateWithStorePrefetch(withStoreQuery("/my-orders", currentStoreSlug), "orders");
               }}
             >
               My Orders
+            </Link>
+            <Link
+              to={withStoreQuery("/profile", currentStoreSlug)}
+              className="hover:text-slate-900"
+              onClick={(event) => {
+                event.preventDefault();
+                navigateWithStorePrefetch(withStoreQuery("/profile", currentStoreSlug), "profile");
+              }}
+            >
+              Profile
             </Link>
             {canAccessAdmin ? (
               <Link
@@ -383,26 +447,37 @@ export const StoreLayout = ({ children }) => {
       <Drawer isOpen={mobileNavOpen} onClose={() => setMobileNavOpen(false)} title="Menu">
         <div className="space-y-3">
           <Link
-            to="/"
+            to={currentStoreSlug ? `/store/${currentStoreSlug}` : "/"}
             onMouseEnter={() => prefetchStore("shop")}
             onFocus={() => prefetchStore("shop")}
             onClick={(event) => {
               event.preventDefault();
               setMobileNavOpen(false);
-              navigateWithStorePrefetch("/", "shop");
+              navigateWithStorePrefetch(currentStoreSlug ? `/store/${currentStoreSlug}` : "/", "shop");
             }}
             className="block rounded-lg px-2 py-1.5 text-sm hover:bg-slate-100"
           >
             Shop
           </Link>
           <Link
-            to="/cart"
+            to="/stores"
+            onClick={(event) => {
+              event.preventDefault();
+              setMobileNavOpen(false);
+              navigate("/stores");
+            }}
+            className="block rounded-lg px-2 py-1.5 text-sm hover:bg-slate-100"
+          >
+            Stores
+          </Link>
+          <Link
+            to={withStoreQuery("/cart", currentStoreSlug)}
             onMouseEnter={() => prefetchStore("cart")}
             onFocus={() => prefetchStore("cart")}
             onClick={(event) => {
               event.preventDefault();
               setMobileNavOpen(false);
-              navigateWithStorePrefetch("/cart", "cart");
+              navigateWithStorePrefetch(withStoreQuery("/cart", currentStoreSlug), "cart");
             }}
             className="block rounded-lg px-2 py-1.5 text-sm hover:bg-slate-100"
           >
@@ -410,18 +485,45 @@ export const StoreLayout = ({ children }) => {
           </Link>
           {isAuthenticated ? (
             <Link
-              to="/my-orders"
+              to={withStoreQuery("/my-orders", currentStoreSlug)}
               onMouseEnter={() => prefetchStore("orders")}
               onFocus={() => prefetchStore("orders")}
               onClick={(event) => {
                 event.preventDefault();
                 setMobileNavOpen(false);
-                navigateWithStorePrefetch("/my-orders", "orders");
-              }}
+                navigateWithStorePrefetch(withStoreQuery("/my-orders", currentStoreSlug), "orders");
+                }}
               className="block rounded-lg px-2 py-1.5 text-sm hover:bg-slate-100"
             >
               My Orders
             </Link>
+          ) : null}
+          {isAuthenticated ? (
+            <Link
+              to={withStoreQuery("/profile", currentStoreSlug)}
+              onMouseEnter={() => prefetchStore("profile")}
+              onFocus={() => prefetchStore("profile")}
+              onClick={(event) => {
+                event.preventDefault();
+                setMobileNavOpen(false);
+                navigateWithStorePrefetch(withStoreQuery("/profile", currentStoreSlug), "profile");
+              }}
+              className="block rounded-lg px-2 py-1.5 text-sm hover:bg-slate-100"
+            >
+              Profile
+            </Link>
+          ) : null}
+          {currentStoreSlug ? (
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setMobileNavOpen(false);
+                navigateWithStorePrefetch("/", "shop");
+              }}
+              className="w-full"
+            >
+              Back to Market
+            </Button>
           ) : null}
           <div className="border-t border-slate-200 pt-3">
             <p className="mb-2 px-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Search</p>

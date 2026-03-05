@@ -6,6 +6,8 @@ const labels = {
   categories: "Categories",
   orders: "Orders",
   users: "Customers",
+  merchants: "Merchants",
+  disputes: "Disputes",
   sales: "Sales",
   coupons: "Coupons",
   "audit-logs": "Audit Logs",

@@ -4,8 +4,21 @@ import { cn } from "./cn";
 const FOCUSABLE =
   'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
-export const Modal = ({ isOpen, onClose, title, children, footer, fullScreenOnMobile = true }) => {
+export const Modal = ({
+  isOpen,
+  onClose,
+  title,
+  children,
+  footer,
+  fullScreenOnMobile = true,
+  maxWidthClass = "sm:max-w-2xl",
+}) => {
   const panelRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -14,7 +27,7 @@ export const Modal = ({ isOpen, onClose, title, children, footer, fullScreenOnMo
     focusable?.[0]?.focus();
 
     const onKeyDown = (event) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") onCloseRef.current?.();
       if (event.key !== "Tab" || !focusable || focusable.length === 0) return;
 
       const first = focusable[0];
@@ -34,7 +47,7 @@ export const Modal = ({ isOpen, onClose, title, children, footer, fullScreenOnMo
       document.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = "";
     };
-  }, [isOpen, onClose]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -44,7 +57,8 @@ export const Modal = ({ isOpen, onClose, title, children, footer, fullScreenOnMo
       <section
         ref={panelRef}
         className={cn(
-          "relative z-10 flex w-full max-h-[90vh] flex-col rounded-t-3xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-950 sm:max-w-2xl sm:rounded-2xl",
+          "relative z-10 flex w-full max-h-[90vh] flex-col rounded-t-3xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-950 sm:rounded-2xl",
+          maxWidthClass,
           fullScreenOnMobile ? "min-h-[70vh] sm:min-h-0 sm:max-h-[85vh]" : "sm:max-h-[80vh]"
         )}
       >

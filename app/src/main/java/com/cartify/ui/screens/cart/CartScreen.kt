@@ -136,7 +136,14 @@ fun CartScreen(
                                     .padding(start = 10.dp)
                             ) {
                                 Text(item.product.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text("Color: Lavender  -  Size: M", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+                                val sizeLabel = item.product.sizes.take(3).joinToString(", ")
+                                if (sizeLabel.isNotBlank()) {
+                                    Text(
+                                        "Sizes: $sizeLabel",
+                                        color = TextSecondary,
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
                                 Text(
                                     if (item.product.stock > 0) "Stock: ${item.product.stock}" else "Out of stock",
                                     color = if (item.product.stock > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,

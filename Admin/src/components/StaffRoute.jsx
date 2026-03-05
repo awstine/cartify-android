@@ -1,7 +1,7 @@
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../auth";
 
-const STAFF_ROLES = ["support", "manager", "admin", "super_admin"];
+const STAFF_ROLES = ["merchant", "support", "manager", "admin", "super_admin"];
 
 export const StaffRoute = ({ children }) => {
   const location = useLocation();

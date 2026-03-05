@@ -3,14 +3,16 @@ import { body, param, validationResult } from "express-validator";
 import mongoose from "mongoose";
 import { requireAuth } from "../middleware/auth.js";
 import { Product } from "../models/Product.js";
+import { Store } from "../models/Store.js";
 import { Wishlist } from "../models/Wishlist.js";
 
 const router = Router();
 router.use(requireAuth);
 
-const mapWishlistResponse = (wishlist, productsById) =>
+const mapWishlistResponse = (wishlist, productsById, storesById) =>
   wishlist.items.map((productId) => {
     const product = productsById.get(String(productId));
+    const store = product?.storeId ? storesById.get(String(product.storeId)) : null;
     return {
       productId: String(productId),
       product: product
@@ -21,6 +23,9 @@ const mapWishlistResponse = (wishlist, productsById) =>
             category: product.category,
             imageUrl: product.imageUrl,
             price: product.price,
+            storeId: product.storeId ? String(product.storeId) : null,
+            storeName: store?.name || "Marketplace",
+            storeSlug: store?.slug || "",
           }
         : null,
     };
@@ -33,8 +38,11 @@ router.get("/", async (req, res) => {
 
   const products = await Product.find({ _id: { $in: wishlist.items } });
   const productsById = new Map(products.map((p) => [String(p._id), p]));
+  const storeIds = products.map((product) => product.storeId).filter(Boolean);
+  const stores = await Store.find({ _id: { $in: storeIds } }).select("name slug");
+  const storesById = new Map(stores.map((store) => [String(store._id), store]));
 
-  res.json({ items: mapWishlistResponse(wishlist, productsById) });
+  res.json({ items: mapWishlistResponse(wishlist, productsById, storesById) });
 });
 
 router.post(

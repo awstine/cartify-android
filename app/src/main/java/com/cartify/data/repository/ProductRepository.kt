@@ -50,11 +50,21 @@ class ProductRepository(
 private fun List<BackendProduct>.toUiProducts(): List<Product> {
     val usedIds = mutableSetOf<Int>()
     return map { backendProduct ->
-        backendProduct.toUiProduct(usedIds)
+        backendProduct.toUiProduct(usedIds, sourceStoreSlug = null)
     }
 }
 
-private fun BackendProduct.toUiProduct(usedIds: MutableSet<Int>): Product {
+fun List<BackendProduct>.toUiProductsForStore(storeSlug: String): List<Product> {
+    val usedIds = mutableSetOf<Int>()
+    return map { backendProduct ->
+        backendProduct.toUiProduct(usedIds, sourceStoreSlug = storeSlug)
+    }
+}
+
+private fun BackendProduct.toUiProduct(
+    usedIds: MutableSet<Int>,
+    sourceStoreSlug: String?
+): Product {
     val baseId = id.hashCode()
     var candidate = if (baseId == Int.MIN_VALUE) 0 else kotlin.math.abs(baseId)
     while (!usedIds.add(candidate)) {
@@ -71,6 +81,9 @@ private fun BackendProduct.toUiProduct(usedIds: MutableSet<Int>): Product {
         category = category.trim().ifBlank { "general" },
         imageUrl = gallery.firstOrNull().orEmpty(),
         imageUrls = gallery,
+        storeId = storeId?.trim().orEmpty(),
+        storeSlug = storeSlug?.trim().orEmpty().ifBlank { sourceStoreSlug?.trim().orEmpty() },
+        sizes = resolvedSizes(),
         stock = resolvedStock()
     )
 }
@@ -103,4 +116,17 @@ private fun BackendProduct.resolvedImageUrls(): List<String> {
                 .replace("https://ecommerce-adroid-app.onrender.com", backendHost, ignoreCase = true)
         }
         .distinct()
+}
+
+private fun BackendProduct.resolvedSizes(): List<String> {
+    val directSizes = sizes.orEmpty()
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+
+    val variantSizes = variants.orEmpty()
+        .mapNotNull { it.size }
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+
+    return (directSizes + variantSizes).distinct()
 }

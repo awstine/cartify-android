@@ -2,14 +2,14 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { Button } from "../components/ui/Button";
-import { Field, Input } from "../components/ui/Field";
+import { Field, Input, Textarea } from "../components/ui/Field";
 import { PageHeader } from "../components/ui/PageHeader";
 import { ErrorState, LoadingState } from "../components/ui/States";
 import { Card } from "../components/ui/Surface";
 import { useToast } from "../context/ToastContext";
 
 export const ProfilePage = () => {
-  const { updateUser } = useAuth();
+  const { user, updateUser } = useAuth();
   const { showToast } = useToast();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -21,6 +21,9 @@ export const ProfilePage = () => {
   });
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
+  const [storeForm, setStoreForm] = useState({ name: "", description: "", logoUrl: "" });
+  const [savingStore, setSavingStore] = useState(false);
+  const canManageStore = ["merchant", "manager", "admin", "super_admin"].includes(user?.role || "");
 
   const loadProfile = async () => {
     setLoading(true);
@@ -28,10 +31,39 @@ export const ProfilePage = () => {
     try {
       const response = await api.get("/admin/profile");
       setProfileForm({ name: response.data.name || "", email: response.data.email || "" });
+      if (canManageStore) {
+        try {
+          const storeResponse = await api.get("/stores/me");
+          setStoreForm({
+            name: storeResponse.data.name || "",
+            description: storeResponse.data.description || "",
+            logoUrl: storeResponse.data.logoUrl || "",
+          });
+        } catch (_err) {
+          // User may not be linked to a store yet.
+        }
+      }
     } catch (err) {
       setError(err?.response?.data?.message || "Failed to load profile");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const saveStore = async (event) => {
+    event.preventDefault();
+    setSavingStore(true);
+    try {
+      await api.patch("/stores/me", storeForm);
+      showToast({ type: "success", title: "Store updated successfully" });
+    } catch (err) {
+      showToast({
+        type: "error",
+        title: "Failed to update store",
+        message: err?.response?.data?.message || "Try again.",
+      });
+    } finally {
+      setSavingStore(false);
     }
   };
 
@@ -152,6 +184,26 @@ export const ProfilePage = () => {
             </Button>
           </form>
         </Card>
+
+        {canManageStore ? (
+          <Card>
+            <h3 className="text-base font-semibold">Store Settings</h3>
+            <form className="mt-4 space-y-3" onSubmit={saveStore}>
+              <Field label="Store Name" htmlFor="store-name">
+                <Input id="store-name" value={storeForm.name} onChange={(event) => setStoreForm((prev) => ({ ...prev, name: event.target.value }))} required />
+              </Field>
+              <Field label="Store Logo URL" htmlFor="store-logo">
+                <Input id="store-logo" value={storeForm.logoUrl} onChange={(event) => setStoreForm((prev) => ({ ...prev, logoUrl: event.target.value }))} />
+              </Field>
+              <Field label="Store Description" htmlFor="store-description">
+                <Textarea id="store-description" rows={3} value={storeForm.description} onChange={(event) => setStoreForm((prev) => ({ ...prev, description: event.target.value }))} />
+              </Field>
+              <Button type="submit" loading={savingStore}>
+                Save Store
+              </Button>
+            </form>
+          </Card>
+        ) : null}
       </div>
     </div>
   );

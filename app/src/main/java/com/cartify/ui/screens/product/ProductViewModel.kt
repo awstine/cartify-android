@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.SharingStarted
+import kotlin.random.Random
 
 enum class ProductSortOption { Popularity, Newest, PriceLowToHigh, PriceHighToLow }
 
@@ -29,6 +30,7 @@ class ProductViewModel(
     private val productRepository: ProductRepository,
     private val cartRepository: CartRepository
 ) : ViewModel() {
+    private val popularitySalt = Random.nextInt(1, 10_000)
     private var lastVisibleProducts: List<Product> = emptyList()
     private val query = MutableStateFlow("")
     private val category = MutableStateFlow("All")
@@ -183,6 +185,7 @@ class ProductViewModel(
             .asSequence()
             .filter { it.id != product.id && it.category.equals(product.category, ignoreCase = true) }
             .toList()
+            .shuffled()
         if (sameCategory.size >= limit) return sameCategory.take(limit)
 
         val additional = hydrated
@@ -190,6 +193,7 @@ class ProductViewModel(
             .filter { it.id != product.id && sameCategory.none { existing -> existing.id == it.id } }
             .take(limit - sameCategory.size)
             .toList()
+            .shuffled()
         return sameCategory + additional
     }
 
@@ -199,7 +203,7 @@ class ProductViewModel(
         localReviews.value = localReviews.value + (productId to (current + normalized))
     }
 
-    private fun pseudoPopularity(id: Int): Int = (id * 37) % 100
+    private fun pseudoPopularity(id: Int): Int = ((id * 37) + popularitySalt) % 100
 
     private fun applyLocalReviews(product: Product, reviews: List<Int>): Product {
         if (reviews.isEmpty()) return product

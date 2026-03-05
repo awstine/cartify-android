@@ -11,10 +11,13 @@ import { EmptyState, ErrorState, LoadingState } from "../components/ui/States";
 import { Badge } from "../components/ui/Surface";
 import { Table, Td } from "../components/ui/Table";
 import { useToast } from "../context/ToastContext";
+import { useAuth } from "../auth";
 
 export const CategoriesPage = () => {
   const navigate = useNavigate();
   const { showToast } = useToast();
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === "super_admin";
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -113,16 +116,22 @@ export const CategoriesPage = () => {
     <div>
       <PageHeader
         title="Categories"
-        description="Organize catalog structure and parent relationships."
+        description={
+          isSuperAdmin
+            ? "Organize catalog structure and parent relationships."
+            : "Categories are managed by super admin. You can only view and use them when creating products."
+        }
         action={
-          <Button
-            onClick={() => {
-              setEditingCategory(null);
-              setIsModalOpen(true);
-            }}
-          >
-            Add New
-          </Button>
+          isSuperAdmin ? (
+            <Button
+              onClick={() => {
+                setEditingCategory(null);
+                setIsModalOpen(true);
+              }}
+            >
+              Add New
+            </Button>
+          ) : null
         }
       />
       <Toolbar onOpenFilters={() => setIsFilterOpen(true)}>
@@ -151,8 +160,12 @@ export const CategoriesPage = () => {
       {!loading && !error && filteredCategories.length === 0 ? (
         <EmptyState
           title="No categories available"
-          description="Create categories to improve product discoverability."
-          action={<Button onClick={() => setIsModalOpen(true)}>Add Category</Button>}
+          description={
+            isSuperAdmin
+              ? "Create categories to improve product discoverability."
+              : "No categories have been created by super admin yet."
+          }
+          action={isSuperAdmin ? <Button onClick={() => setIsModalOpen(true)}>Add Category</Button> : null}
         />
       ) : null}
 
@@ -193,32 +206,38 @@ export const CategoriesPage = () => {
                 <Badge tone={category.parentId ? "info" : "success"}>{category.parentId ? "Subcategory" : "Category"}</Badge>
               </Td>
               <Td className="text-right">
-                <div className="flex justify-end">
-                  <RowActions
-                    onEdit={() => {
-                      setEditingCategory(category);
-                      setIsModalOpen(true);
-                    }}
-                    onDelete={() => handleDelete(category._id)}
-                  />
-                </div>
+                {isSuperAdmin ? (
+                  <div className="flex justify-end">
+                    <RowActions
+                      onEdit={() => {
+                        setEditingCategory(category);
+                        setIsModalOpen(true);
+                      }}
+                      onDelete={() => handleDelete(category._id)}
+                    />
+                  </div>
+                ) : (
+                  <span className="text-xs text-slate-500">View only</span>
+                )}
               </Td>
             </>
           )}
         />
       ) : null}
 
-      <CategoryModal
-        isOpen={isModalOpen}
-        onClose={() => {
-          setIsModalOpen(false);
-          setEditingCategory(null);
-        }}
-        onSubmit={handleModalSubmit}
-        initialValues={editingCategory}
-        loading={submitting}
-        categoryOptions={categoryOptions}
-      />
+      {isSuperAdmin ? (
+        <CategoryModal
+          isOpen={isModalOpen}
+          onClose={() => {
+            setIsModalOpen(false);
+            setEditingCategory(null);
+          }}
+          onSubmit={handleModalSubmit}
+          initialValues={editingCategory}
+          loading={submitting}
+          categoryOptions={categoryOptions}
+        />
+      ) : null}
     </div>
   );
 };

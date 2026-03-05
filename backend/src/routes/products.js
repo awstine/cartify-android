@@ -2,13 +2,26 @@ import { Router } from "express";
 import { body, validationResult } from "express-validator";
 import mongoose from "mongoose";
 import { requireAuth } from "../middleware/auth.js";
+import { Store } from "../models/Store.js";
 import { User } from "../models/User.js";
 import { Product } from "../models/Product.js";
 
 const router = Router();
 
-router.get("/", async (_req, res) => {
-  const products = await Product.find().sort({ createdAt: -1 });
+router.get("/", async (req, res) => {
+  const query = {};
+  if (req.query.storeId && mongoose.Types.ObjectId.isValid(String(req.query.storeId))) {
+    query.storeId = String(req.query.storeId);
+  }
+  if (req.query.storeSlug) {
+    const store = await Store.findOne({ slug: String(req.query.storeSlug), isActive: true }).select("_id");
+    if (!store) return res.json([]);
+    query.storeId = store._id;
+  }
+  if (req.query.includeDrafts !== "true") {
+    query.status = { $ne: "draft" };
+  }
+  const products = await Product.find(query).sort({ createdAt: -1 });
   res.json(products);
 });
 

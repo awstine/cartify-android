@@ -75,22 +75,56 @@ fun ProductScreen(
     onCartClick: () -> Unit = {},
     onAddToCartAttempt: (Product) -> Boolean = { false },
     onSignInRequested: () -> Unit = {},
-    onCreateAccountRequested: () -> Unit = {}
+    onCreateAccountRequested: () -> Unit = {},
+    productsOverride: List<Product>? = null,
+    productsOverrideLoading: Boolean = false,
+    productsOverrideError: String? = null,
+    onRetryProductsOverride: (() -> Unit)? = null,
+    storeModeLabel: String? = null,
+    onBackToMarket: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showGuestSheet by remember { mutableStateOf(false) }
-    val homeCategories = remember(uiState.products, uiState.isLoading) { viewModel.allCategories() }
-    val heroProducts = uiState.products.take(8)
+    val hasOverride = productsOverride != null
+    val baseProducts = productsOverride ?: uiState.products
+    val scopedProducts = remember(baseProducts, uiState.searchQuery, uiState.selectedCategory, uiState.selectedSort, hasOverride) {
+        if (!hasOverride) {
+            baseProducts
+        } else {
+            val filtered = baseProducts
+                .filter { uiState.selectedCategory == "All" || it.category.equals(uiState.selectedCategory, true) }
+                .filter {
+                    uiState.searchQuery.isBlank() ||
+                        it.title.contains(uiState.searchQuery, ignoreCase = true) ||
+                        it.description.contains(uiState.searchQuery, ignoreCase = true)
+                }
+            when (uiState.selectedSort) {
+                ProductSortOption.Popularity -> filtered.sortedByDescending { it.rating?.count ?: 0 }
+                ProductSortOption.Newest -> filtered.sortedByDescending { it.id }
+                ProductSortOption.PriceLowToHigh -> filtered.sortedBy { it.price }
+                ProductSortOption.PriceHighToLow -> filtered.sortedByDescending { it.price }
+            }
+        }
+    }
+    val homeCategories = remember(scopedProducts) {
+        val base = scopedProducts
+            .map { it.category.trim() }
+            .filter { it.isNotBlank() }
+            .distinctBy { it.lowercase(Locale.getDefault()) }
+            .sortedBy { it.lowercase(Locale.getDefault()) }
+        listOf("All") + base
+    }
+    val heroProducts = scopedProducts.take(8)
     val heroListState = rememberLazyListState()
     val productFeedListState = rememberLazyListState()
     var visibleCount by remember(
         uiState.searchQuery,
         uiState.selectedCategory,
         uiState.selectedSort,
-        uiState.products.size
+        scopedProducts.size
     ) { mutableStateOf(12) }
-    val visibleProducts = remember(uiState.products, visibleCount) {
-        uiState.products.take(visibleCount.coerceAtLeast(1))
+    val visibleProducts = remember(scopedProducts, visibleCount) {
+        scopedProducts.take(visibleCount.coerceAtLeast(1))
     }
     val pullToRefreshState = rememberPullToRefreshState()
 
@@ -119,11 +153,11 @@ fun ProductScreen(
             modifier = Modifier.fillMaxSize()
         ) {
             when {
-                uiState.isLoading && uiState.products.isEmpty() -> LoadingState()
-                uiState.error != null && uiState.products.isEmpty() -> {
+                (if (hasOverride) productsOverrideLoading else uiState.isLoading) && scopedProducts.isEmpty() -> LoadingState()
+                (if (hasOverride) !productsOverrideError.isNullOrBlank() else uiState.error != null) && scopedProducts.isEmpty() -> {
                     AppErrorState(
-                        message = uiState.error ?: "Unable to load products",
-                        onRetry = viewModel::retryLoad
+                        message = productsOverrideError ?: uiState.error ?: "Unable to load products",
+                        onRetry = { onRetryProductsOverride?.invoke() ?: viewModel.retryLoad() }
                     )
                 }
                 else -> {
@@ -176,10 +210,27 @@ fun ProductScreen(
                                         )
                                     }
                                 }
+                                if (!storeModeLabel.isNullOrBlank()) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            "Store: $storeModeLabel",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        TextButton(onClick = onBackToMarket) {
+                                            Text("Back to market")
+                                        }
+                                    }
+                                }
                             }
                         }
 
-                        if (uiState.products.isNotEmpty()) {
+                        if (scopedProducts.isNotEmpty()) {
                             item {
                                 LazyRow(
                                     state = heroListState,
@@ -215,7 +266,7 @@ fun ProductScreen(
                             }
                         }
 
-                        if (uiState.products.isEmpty()) {
+                        if (scopedProducts.isEmpty()) {
                             item { AppEmptyState("No products", "Try another category or search.") }
                         } else {
                             val rows = visibleProducts.chunked(2)
@@ -239,10 +290,10 @@ fun ProductScreen(
                                 }
                             }
 
-                            if (visibleCount < uiState.products.size) {
+                            if (visibleCount < scopedProducts.size) {
                                 item(key = "load-more-trigger") {
-                                    LaunchedEffect(visibleCount, uiState.products.size) {
-                                        visibleCount = min(visibleCount + 10, uiState.products.size)
+                                    LaunchedEffect(visibleCount, scopedProducts.size) {
+                                        visibleCount = min(visibleCount + 10, scopedProducts.size)
                                     }
                                     Text(
                                         "Loading more products...",

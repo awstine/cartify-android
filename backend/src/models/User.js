@@ -20,11 +20,12 @@ const userSchema = new mongoose.Schema(
     passwordHash: { type: String, required: true },
     role: {
       type: String,
-      enum: ["customer", "support", "manager", "admin", "super_admin"],
+      enum: ["customer", "merchant", "support", "manager", "admin", "super_admin"],
       default: "customer",
       index: true,
     },
     profileImageUrl: { type: String, default: "" },
+    storeId: { type: mongoose.Schema.Types.ObjectId, ref: "Store", default: null, index: true },
     preferences: {
       notificationsEnabled: { type: Boolean, default: true },
       darkModeEnabled: { type: Boolean, default: false },

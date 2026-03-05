@@ -6,7 +6,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -15,6 +23,8 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -26,6 +36,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -35,9 +47,13 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.compose.ui.unit.dp
 import com.cartify.data.local.AppPreferences
+import com.cartify.data.model.Product
 import com.cartify.data.remote.backend.ClientCheckoutItem
+import com.cartify.data.remote.backend.BackendStore
 import com.cartify.data.repository.BackendRepository
+import com.cartify.data.repository.toUiProductsForStore
 import com.cartify.ui.components.AppPrimaryButton
+import com.cartify.ui.components.ProductImage
 import com.cartify.ui.screens.auth.AuthSuccessScreen
 import com.cartify.ui.screens.auth.AuthViewModel
 import com.cartify.ui.screens.auth.AuthViewModelFactory
@@ -55,6 +71,7 @@ import com.cartify.ui.screens.more.OffersScreen
 import com.cartify.ui.screens.more.OrdersScreen
 import com.cartify.ui.screens.more.ProfileScreen
 import com.cartify.ui.screens.more.SettingsScreen
+import com.cartify.ui.screens.more.StoresScreen
 import com.cartify.ui.screens.more.WishlistScreen
 import com.cartify.ui.screens.product.ProductDetailsScreen
 import com.cartify.ui.screens.product.ProductScreen
@@ -87,9 +104,76 @@ fun AppNavHost(
     val scope = rememberCoroutineScope()
     val backendRepository = remember { BackendRepository() }
     var wishlistProductIds by remember { mutableStateOf(setOf<String>()) }
+    var stores by remember { mutableStateOf<List<BackendStore>>(emptyList()) }
+    var storesLoading by remember { mutableStateOf(false) }
+    var storesError by remember { mutableStateOf<String?>(null) }
+    var currentStoreSlug by remember { mutableStateOf<String?>(null) }
+    var currentStoreName by remember { mutableStateOf<String?>(null) }
+    var storeModeProducts by remember { mutableStateOf<List<Product>>(emptyList()) }
+    var storeModeLoading by remember { mutableStateOf(false) }
+    var storeModeError by remember { mutableStateOf<String?>(null) }
+    var storeModeRefreshTick by remember { mutableStateOf(0) }
+    val scopedProducts = remember(productUiState.products, currentStoreSlug, storeModeProducts) {
+        if (currentStoreSlug.isNullOrBlank()) productUiState.products else storeModeProducts
+    }
+    val scopedCategories = remember(scopedProducts) {
+        val base = scopedProducts
+            .map { it.category.trim() }
+            .filter { it.isNotBlank() }
+            .distinctBy { it.lowercase() }
+            .sortedBy { it.lowercase() }
+        listOf("All") + base
+    }
+    val scopedCategoryImages = remember(scopedProducts) {
+        scopedProducts
+            .asSequence()
+            .filter { it.category.isNotBlank() }
+            .groupBy { it.category.trim().lowercase() }
+            .mapValues { (_, products) ->
+                products
+                    .asSequence()
+                    .flatMap { p -> (p.imageUrls + listOf(p.imageUrl)).asSequence() }
+                    .map { it.trim() }
+                    .firstOrNull { it.isNotBlank() }
+                    .orEmpty()
+            }
+    }
+
+    fun loadStores() {
+        scope.launch {
+            storesLoading = true
+            storesError = null
+            runCatching { backendRepository.getStores() }
+                .onSuccess { stores = it }
+                .onFailure { storesError = it.message ?: "Unable to load stores" }
+            storesLoading = false
+        }
+    }
 
     LaunchedEffect(Unit) {
         productViewModel.retryLoad()
+        loadStores()
+    }
+
+    LaunchedEffect(currentStoreSlug, storeModeRefreshTick) {
+        val slug = currentStoreSlug?.trim().orEmpty()
+        if (slug.isBlank()) {
+            storeModeProducts = emptyList()
+            storeModeError = null
+            storeModeLoading = false
+            return@LaunchedEffect
+        }
+        storeModeLoading = true
+        storeModeError = null
+        runCatching { backendRepository.getProducts(storeSlug = slug) }
+            .onSuccess { backendProducts ->
+                storeModeProducts = backendProducts.toUiProductsForStore(slug)
+            }
+            .onFailure { throwable ->
+                storeModeProducts = emptyList()
+                storeModeError = throwable.message ?: "Unable to load store products"
+            }
+        storeModeLoading = false
     }
 
     LaunchedEffect(isLoggedIn, session.token) {
@@ -144,6 +228,7 @@ fun AppNavHost(
         NavigationItem.Wishlist.route,
         NavigationItem.Cart.route,
         NavigationItem.Profile.route,
+        NavigationItem.Stores.route,
         NavigationItem.Orders.route,
         NavigationItem.Offers.route,
         NavigationItem.Settings.route,
@@ -299,16 +384,50 @@ fun AppNavHost(
                         }
                     },
                     onSignInRequested = { navController.navigate(NavigationItem.Login.route) { launchSingleTop = true } },
-                    onCreateAccountRequested = { navController.navigate(NavigationItem.SignUp.route) { launchSingleTop = true } }
+                    onCreateAccountRequested = { navController.navigate(NavigationItem.SignUp.route) { launchSingleTop = true } },
+                    productsOverride = if (currentStoreSlug.isNullOrBlank()) null else scopedProducts,
+                    productsOverrideLoading = if (currentStoreSlug.isNullOrBlank()) false else storeModeLoading,
+                    productsOverrideError = if (currentStoreSlug.isNullOrBlank()) null else storeModeError,
+                    onRetryProductsOverride = {
+                        storeModeRefreshTick += 1
+                    },
+                    storeModeLabel = currentStoreName,
+                    onBackToMarket = {
+                        currentStoreSlug = null
+                        currentStoreName = null
+                    }
                 )
             }
             composable(NavigationItem.Categories.route) {
                 CategoriesScreen(
-                    categories = productViewModel.allCategories(),
-                    categoryImages = productViewModel.categoryImageMap(),
+                    categories = scopedCategories,
+                    categoryImages = scopedCategoryImages,
                     onCategoryClick = { category ->
                         productViewModel.onCategorySelected(category)
                         navController.navigate(NavigationItem.Products.route) { launchSingleTop = true }
+                    },
+                    storeModeLabel = currentStoreName,
+                    onBackToMarket = {
+                        currentStoreSlug = null
+                        currentStoreName = null
+                    }
+                )
+            }
+            composable(NavigationItem.Stores.route) {
+                StoresScreen(
+                    stores = stores,
+                    selectedStoreSlug = currentStoreSlug,
+                    isLoading = storesLoading,
+                    errorMessage = storesError,
+                    onRetry = { loadStores() },
+                    onStoreClick = { store ->
+                        currentStoreSlug = store.slug
+                        currentStoreName = store.name
+                        navController.navigate(NavigationItem.Products.route) { launchSingleTop = true }
+                    },
+                    onBackToMarket = {
+                        currentStoreSlug = null
+                        currentStoreName = null
                     }
                 )
             }
@@ -316,6 +435,7 @@ fun AppNavHost(
                 if (isLoggedIn) {
                     WishlistScreen(
                         token = session.token,
+                        activeStoreSlug = currentStoreSlug,
                         onProductClick = { backendProductId ->
                             productViewModel.productByBackendId(backendProductId)?.let { product ->
                                 navController.navigate("product_details/${product.id}") { launchSingleTop = true }
@@ -324,132 +444,88 @@ fun AppNavHost(
                         onWishlistChanged = { ids -> wishlistProductIds = ids }
                     )
                 } else {
-                    AuthRequiredScreen(
-                        title = "Sign in to continue",
-                        message = "Create an account or sign in to save your wishlist.",
-                        onSignIn = {
-                            authViewModel.setPendingAction(
-                                com.cartify.ui.screens.auth.PendingAuthAction(
-                                    actionName = "OPEN_WISHLIST",
-                                    returnRoute = NavigationItem.Wishlist.route
-                                )
-                            )
-                            navController.navigate(NavigationItem.Login.route) { launchSingleTop = true }
+                    GuestProductExploreScreen(
+                        title = "Wishlist",
+                        subtitle = "Sign in to save wishlist. You can still browse and add to cart.",
+                        products = scopedProducts,
+                        onProductClick = { productId ->
+                            navController.navigate("product_details/$productId") { launchSingleTop = true }
                         },
-                        onSignUp = {
-                            authViewModel.setPendingAction(
-                                com.cartify.ui.screens.auth.PendingAuthAction(
-                                    actionName = "OPEN_WISHLIST",
-                                    returnRoute = NavigationItem.Wishlist.route
-                                )
-                            )
-                            navController.navigate(NavigationItem.SignUp.route) { launchSingleTop = true }
+                        onAddToCart = { product ->
+                            if (product.stock > 0) {
+                                productViewModel.addToCart(product)
+                            } else {
+                                scope.launch { snackbarHostState.showSnackbar("Out of stock") }
+                            }
                         },
-                        onContinue = { navController.navigate(NavigationItem.Products.route) { launchSingleTop = true } }
+                        onSignIn = { navController.navigate(NavigationItem.Login.route) { launchSingleTop = true } },
+                        onSignUp = { navController.navigate(NavigationItem.SignUp.route) { launchSingleTop = true } }
                     )
                 }
             }
             composable(NavigationItem.Cart.route) {
-                if (isLoggedIn) {
-                    CartScreen(
-                        navController = navController,
-                        cartViewModel = cartViewModel,
-                        productViewModel = productViewModel,
-                        onProductClick = { productId ->
-                            navController.navigate("product_details/$productId") {
-                                launchSingleTop = true
-                            }
+                CartScreen(
+                    navController = navController,
+                    cartViewModel = cartViewModel,
+                    productViewModel = productViewModel,
+                    onProductClick = { productId ->
+                        navController.navigate("product_details/$productId") {
+                            launchSingleTop = true
                         }
-                    )
-                } else {
-                    AuthRequiredScreen(
-                        title = "Sign in to view your cart",
-                        message = "Create an account or sign in to add items to your cart and checkout faster.",
-                        onSignIn = {
-                            authViewModel.setPendingAction(
-                                com.cartify.ui.screens.auth.PendingAuthAction(
-                                    actionName = "OPEN_CART",
-                                    returnRoute = NavigationItem.Cart.route
-                                )
-                            )
-                            navController.navigate(NavigationItem.Login.route) { launchSingleTop = true }
-                        },
-                        onSignUp = {
-                            authViewModel.setPendingAction(
-                                com.cartify.ui.screens.auth.PendingAuthAction(
-                                    actionName = "OPEN_CART",
-                                    returnRoute = NavigationItem.Cart.route
-                                )
-                            )
-                            navController.navigate(NavigationItem.SignUp.route) { launchSingleTop = true }
-                        },
-                        onContinue = { navController.navigate(NavigationItem.Products.route) { launchSingleTop = true } }
-                    )
-                }
+                    }
+                )
             }
             composable(NavigationItem.Profile.route) {
-                if (isLoggedIn) {
-                    ProfileScreen(
-                        displayName = session.name,
-                        email = session.email,
-                        profileImageUrl = session.profileImageUrl,
-                        token = session.token,
-                        initialNotificationsEnabled = appPreferences.isNotificationsEnabled(),
-                        initialDarkModeEnabled = darkModeEnabled,
-                        onNotificationsChanged = { enabled -> appPreferences.setNotificationsEnabled(enabled) },
-                        onDarkModeChanged = onDarkModeChanged,
-                        onProfileUpdated = { updated ->
-                            authViewModel.updateSessionProfile(
-                                name = updated.name,
-                                email = updated.email,
-                                profileImageUrl = updated.profileImageUrl
-                            )
-                            scope.launch { snackbarHostState.showSnackbar("Profile updated") }
-                        },
-                        onAccountDeleted = {
-                            authViewModel.signOut()
-                            navController.navigate(NavigationItem.Products.route) {
-                                popUpTo(navController.graph.id) { inclusive = true }
-                                launchSingleTop = true
-                            }
-                            scope.launch { snackbarHostState.showSnackbar("Account deleted") }
-                        },
-                        onOpenOrders = {
-                            navigateWithPrefetch(NavigationItem.Orders.route)
-                        },
-                        onLogout = {
-                            authViewModel.signOut()
-                            navController.navigate(NavigationItem.Products.route) {
-                                popUpTo(navController.graph.id) { inclusive = true }
-                                launchSingleTop = true
-                            }
+                ProfileScreen(
+                    displayName = session.name,
+                    email = session.email,
+                    profileImageUrl = session.profileImageUrl,
+                    token = session.token,
+                    initialNotificationsEnabled = appPreferences.isNotificationsEnabled(),
+                    initialDarkModeEnabled = darkModeEnabled,
+                    onNotificationsChanged = { enabled -> appPreferences.setNotificationsEnabled(enabled) },
+                    onDarkModeChanged = onDarkModeChanged,
+                    onProfileUpdated = { updated ->
+                        authViewModel.updateSessionProfile(
+                            name = updated.name,
+                            email = updated.email,
+                            profileImageUrl = updated.profileImageUrl
+                        )
+                        scope.launch { snackbarHostState.showSnackbar("Profile updated") }
+                    },
+                    onAccountDeleted = {
+                        authViewModel.signOut()
+                        navController.navigate(NavigationItem.Products.route) {
+                            popUpTo(navController.graph.id) { inclusive = true }
+                            launchSingleTop = true
                         }
-                    )
-                } else {
-                    AuthRequiredScreen(
-                        title = "Sign in to view your profile",
-                        message = "Create an account or sign in to access profile and account settings.",
-                        onSignIn = {
-                            authViewModel.setPendingAction(
-                                com.cartify.ui.screens.auth.PendingAuthAction(
-                                    actionName = "OPEN_PROFILE",
-                                    returnRoute = NavigationItem.Profile.route
-                                )
-                            )
-                            navController.navigate(NavigationItem.Login.route) { launchSingleTop = true }
-                        },
-                        onSignUp = {
-                            authViewModel.setPendingAction(
-                                com.cartify.ui.screens.auth.PendingAuthAction(
-                                    actionName = "OPEN_PROFILE",
-                                    returnRoute = NavigationItem.Profile.route
-                                )
-                            )
-                            navController.navigate(NavigationItem.SignUp.route) { launchSingleTop = true }
-                        },
-                        onContinue = { navController.navigate(NavigationItem.Products.route) { launchSingleTop = true } }
-                    )
-                }
+                        scope.launch { snackbarHostState.showSnackbar("Account deleted") }
+                    },
+                    onOpenOrders = { navigateWithPrefetch(NavigationItem.Orders.route) },
+                    onLogout = {
+                        authViewModel.signOut()
+                        navController.navigate(NavigationItem.Products.route) {
+                            popUpTo(navController.graph.id) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    },
+                    isLoggedIn = isLoggedIn,
+                    products = scopedProducts,
+                    onProductClick = { productId ->
+                        navController.navigate("product_details/$productId") { launchSingleTop = true }
+                    },
+                    onLoginRequested = { navController.navigate(NavigationItem.Login.route) { launchSingleTop = true } },
+                    onOpenSettings = { navigateWithPrefetch(NavigationItem.Settings.route) },
+                    onOpenWishlist = { navigateWithPrefetch(NavigationItem.Wishlist.route) },
+                    onOpenStores = { navigateWithPrefetch(NavigationItem.Stores.route) },
+                    storeModeLabel = currentStoreName,
+                    storeModeError = if (currentStoreSlug.isNullOrBlank()) null else storeModeError,
+                    onRetryStoreMode = { storeModeRefreshTick += 1 },
+                    onBackToMarket = {
+                        currentStoreSlug = null
+                        currentStoreName = null
+                    }
+                )
             }
             composable(NavigationItem.Orders.route) {
                 if (isLoggedIn) {
@@ -549,29 +625,24 @@ fun AppNavHost(
                         }
                     )
                 } else {
-                    AuthRequiredScreen(
-                        title = "Sign in to continue",
-                        message = "Create an account or sign in to continue to checkout.",
-                        onSignIn = {
-                            authViewModel.setPendingAction(
-                                com.cartify.ui.screens.auth.PendingAuthAction(
-                                    actionName = "OPEN_CHECKOUT",
-                                    returnRoute = NavigationItem.Checkout.route
-                                )
+                    LaunchedEffect(Unit) {
+                        authViewModel.setPendingAction(
+                            com.cartify.ui.screens.auth.PendingAuthAction(
+                                actionName = "OPEN_CHECKOUT",
+                                returnRoute = NavigationItem.Checkout.route
                             )
-                            navController.navigate(NavigationItem.Login.route) { launchSingleTop = true }
-                        },
-                        onSignUp = {
-                            authViewModel.setPendingAction(
-                                com.cartify.ui.screens.auth.PendingAuthAction(
-                                    actionName = "OPEN_CHECKOUT",
-                                    returnRoute = NavigationItem.Checkout.route
-                                )
-                            )
-                            navController.navigate(NavigationItem.SignUp.route) { launchSingleTop = true }
-                        },
-                        onContinue = { navController.navigate(NavigationItem.Products.route) { launchSingleTop = true } }
-                    )
+                        )
+                        navController.navigate(NavigationItem.Login.route) {
+                            popUpTo(NavigationItem.Checkout.route) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    }
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
+                    }
                 }
             }
             composable(NavigationItem.CheckoutSuccess.route) {
@@ -588,14 +659,19 @@ fun AppNavHost(
                 arguments = listOf(navArgument("productId") { type = NavType.IntType })
             ) { backStackEntry ->
                 val productId = backStackEntry.arguments?.getInt("productId")
-                val selectedProduct = productId?.let { productViewModel.productById(it) }
+                val selectedProduct = productId?.let { id ->
+                    scopedProducts.find { it.id == id } ?: productViewModel.productById(id)
+                }
                 ProductDetailsScreen(
                     product = selectedProduct,
-                    relatedProducts = selectedProduct?.let { productViewModel.relatedProducts(it, limit = 10) } ?: emptyList(),
+                    relatedProducts = selectedProduct
+                        ?.let { productViewModel.relatedProducts(it, limit = 10) }
+                        ?.filter { currentStoreSlug.isNullOrBlank() || it.storeSlug == currentStoreSlug }
+                        ?: emptyList(),
                     isFavorite = selectedProduct?.backendId?.let { wishlistProductIds.contains(it) } == true,
                     onToggleFavorite = {
                         if (productId != null) {
-                            val product = productViewModel.productById(productId)
+                            val product = scopedProducts.find { it.id == productId } ?: productViewModel.productById(productId)
                             val backendId = product?.backendId?.trim().orEmpty()
                             val allowed = authViewModel.requireAuth(
                                 actionName = "ADD_TO_WISHLIST",
@@ -639,14 +715,7 @@ fun AppNavHost(
                         if (product.stock <= 0) {
                             scope.launch { snackbarHostState.showSnackbar("Out of stock") }
                         } else {
-                            val allowed = authViewModel.requireAuth(
-                                actionName = "ADD_TO_CART",
-                                returnRoute = "product_details/${product.id}",
-                            payload = PendingActionPayload(productId = product.id, quantity = 1)
-                        ) {
                             productViewModel.addToCart(product)
-                        }
-                            if (!allowed) navController.navigate(NavigationItem.Login.route) { launchSingleTop = true }
                         }
                     },
                     onOrderNow = { product ->
@@ -686,6 +755,110 @@ fun AppNavHost(
                 }
             }
 
+        }
+    }
+}
+
+@Composable
+private fun GuestProductExploreScreen(
+    title: String,
+    subtitle: String,
+    products: List<Product>,
+    onProductClick: (Int) -> Unit,
+    onAddToCart: (Product) -> Unit,
+    onSignIn: () -> Unit,
+    onSignUp: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Text(
+            text = subtitle,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 6.dp, bottom = 10.dp)
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            AppPrimaryButton(
+                text = "Sign in",
+                onClick = onSignIn,
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(
+                onClick = onSignUp,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("Create account")
+            }
+        }
+        Spacer(modifier = Modifier.height(10.dp))
+        if (products.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                items(products.take(30), key = { it.id }) { product ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onProductClick(product.id) },
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            ProductImage(
+                                model = product.imageUrl,
+                                contentDescription = product.title,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(74.dp)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    product.title,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    "KSh ${"%.2f".format(product.price)}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    if (product.stock > 0) "Stock: ${product.stock}" else "Out of stock",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (product.stock > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                                )
+                            }
+                            AppPrimaryButton(
+                                text = "Add",
+                                onClick = { onAddToCart(product) },
+                                enabled = product.stock > 0
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }

@@ -2,14 +2,16 @@ import { useEffect, useState } from "react";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth";
 import { Button } from "../components/ui/Button";
-import { Field, Input } from "../components/ui/Field";
+import { Field, Input, Select } from "../components/ui/Field";
 
 export const LoginPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { login, signup, isAuthenticated, isStaff } = useAuth();
+  const { login, signup, signupMerchant, isAuthenticated, isStaff } = useAuth();
   const [mode, setMode] = useState("login");
+  const [signupType, setSignupType] = useState("customer");
   const [name, setName] = useState("");
+  const [storeName, setStoreName] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -40,7 +42,11 @@ export const LoginPage = () => {
         if (password !== confirmPassword) {
           throw new Error("Passwords do not match.");
         }
-        await signup({ name, email, phoneNumber, password });
+        if (signupType === "merchant") {
+          await signupMerchant({ name, email, phoneNumber, password, storeName });
+        } else {
+          await signup({ name, email, phoneNumber, password });
+        }
       } else {
         await login(email, password);
       }
@@ -62,15 +68,26 @@ export const LoginPage = () => {
         <h1 className="font-heading text-3xl font-bold text-slate-900">{mode === "signup" ? "Create Account" : "Login"}</h1>
         <p className="mt-2 text-sm text-slate-600">
           {mode === "signup"
-            ? "New users are created as customers by default."
+            ? "Create a customer account or register as a merchant with your own store."
             : "Sign in to continue shopping or access admin if your role allows."}
         </p>
         <div className="mt-6 space-y-4">
           {mode === "signup" ? (
             <>
+              <Field label="Account Type" htmlFor="signup-type">
+                <Select id="signup-type" value={signupType} onChange={(e) => setSignupType(e.target.value)}>
+                  <option value="customer">Customer Account</option>
+                  <option value="merchant">Merchant Account</option>
+                </Select>
+              </Field>
               <Field label="Full Name" htmlFor="signup-name">
                 <Input id="signup-name" type="text" required value={name} onChange={(e) => setName(e.target.value)} />
               </Field>
+              {signupType === "merchant" ? (
+                <Field label="Store Name" htmlFor="signup-store-name">
+                  <Input id="signup-store-name" type="text" required value={storeName} onChange={(e) => setStoreName(e.target.value)} />
+                </Field>
+              ) : null}
               <Field label="Phone Number" htmlFor="signup-phone">
                 <Input
                   id="signup-phone"

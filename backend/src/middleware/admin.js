@@ -10,12 +10,13 @@ export function requireRoles(allowedRoles = []) {
   return async (req, res, next) => {
     requireAuth(req, res, async () => {
       try {
-        const user = await User.findById(req.user.id).select("role");
+        const user = await User.findById(req.user.id).select("role storeId");
         if (!user || !allowedRoles.includes(user.role)) {
           return res.status(403).json({ message: "Forbidden" });
         }
 
         req.user.role = user.role;
+        req.user.storeId = user.storeId ? String(user.storeId) : null;
         next();
       } catch (error) {
         next(error);
@@ -29,7 +30,7 @@ export function requireSuperAdmin(req, res, next) {
 }
 
 export function requireManagerOrAbove(req, res, next) {
-  return requireRoles(["manager", "admin", "super_admin"])(req, res, next);
+  return requireRoles(["merchant", "manager", "admin", "super_admin"])(req, res, next);
 }
 
 export function requireAdminOrAbove(req, res, next) {
@@ -39,12 +40,13 @@ export function requireAdminOrAbove(req, res, next) {
 export async function requireSupportOrAbove(req, res, next) {
   requireAuth(req, res, async () => {
     try {
-      const user = await User.findById(req.user.id).select("role");
-      if (!user || !["support", "manager", "admin", "super_admin"].includes(user.role)) {
+      const user = await User.findById(req.user.id).select("role storeId");
+      if (!user || !["merchant", "support", "manager", "admin", "super_admin"].includes(user.role)) {
         return res.status(403).json({ message: "Forbidden" });
       }
 
       req.user.role = user.role;
+      req.user.storeId = user.storeId ? String(user.storeId) : null;
       next();
     } catch (error) {
       next(error);

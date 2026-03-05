@@ -3,7 +3,7 @@ import { api, setAuthToken } from "./api";
 
 const AUTH_STORAGE_KEY = "cartify_admin_auth";
 const AuthContext = createContext(null);
-const STAFF_ROLES = ["support", "manager", "admin", "super_admin"];
+const STAFF_ROLES = ["merchant", "support", "manager", "admin", "super_admin"];
 
 export const AuthProvider = ({ children }) => {
   const [authState, setAuthState] = useState(() => {
@@ -45,6 +45,34 @@ export const AuthProvider = ({ children }) => {
     });
   };
 
+  const signupMerchant = async ({ name, email, phoneNumber, password, storeName }) => {
+    const payloadBody = { name, email, phoneNumber, password, storeName };
+    let response;
+    try {
+      response = await api.post("/auth/signup-merchant", payloadBody);
+    } catch (err) {
+      if (err?.response?.status === 404) {
+        try {
+          response = await api.post("/auth/merchant-signup", payloadBody);
+        } catch (fallbackErr) {
+          if (fallbackErr?.response?.status === 404) {
+            response = await api.post("/auth/signup/merchant", payloadBody);
+          } else {
+            throw fallbackErr;
+          }
+        }
+      } else {
+        throw err;
+      }
+    }
+    const payload = response.data;
+    setAuthToken(payload.token);
+    setAuthState({
+      token: payload.token,
+      user: { ...payload.user, role: payload?.user?.role || "merchant" },
+    });
+  };
+
   const logout = () => {
     setAuthState({ token: null, user: null });
   };
@@ -64,6 +92,7 @@ export const AuthProvider = ({ children }) => {
       isStaff: STAFF_ROLES.includes(authState?.user?.role),
       login,
       signup,
+      signupMerchant,
       logout,
       updateUser,
     }),

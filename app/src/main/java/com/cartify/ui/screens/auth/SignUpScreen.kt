@@ -88,13 +88,6 @@ fun SignUpScreen(
             modifier = Modifier.fillMaxWidth(),
             textAlign = TextAlign.Center
         )
-        Spacer(modifier = Modifier.height(AuthSpacing.xl))
-        Row(horizontalArrangement = Arrangement.spacedBy(AuthSpacing.sm), modifier = Modifier.fillMaxWidth()) {
-            SocialAuthButton("Google", "G", onClick = {}, modifier = Modifier.weight(1f))
-            SocialAuthButton("Apple", "A", onClick = {}, modifier = Modifier.weight(1f))
-        }
-        Spacer(modifier = Modifier.height(AuthSpacing.lg))
-        DividerWithOr()
         Spacer(modifier = Modifier.height(AuthSpacing.lg))
         PillInput(
             value = fullName,
@@ -183,5 +176,14 @@ fun SignUpScreen(
                 Text("Sign In", color = AuthColors.Link, fontWeight = FontWeight.SemiBold)
             }
         }
+        Spacer(modifier = Modifier.height(AuthSpacing.md))
+        DividerWithOr()
+        Spacer(modifier = Modifier.height(AuthSpacing.md))
+        SocialAuthButton(
+            label = "Continue with Google",
+            iconText = "G",
+            onClick = {},
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }

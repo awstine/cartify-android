@@ -7,12 +7,15 @@ import {
   requireAdminOrAbove,
   requireManagerOrAbove,
   requireSupportOrAbove,
+  requireSuperAdmin,
 } from "../middleware/admin.js";
 import { AuditLog } from "../models/AuditLog.js";
 import { Category } from "../models/Category.js";
 import { Coupon } from "../models/Coupon.js";
+import { Dispute } from "../models/Dispute.js";
 import { Order } from "../models/Order.js";
 import { Product } from "../models/Product.js";
+import { Store } from "../models/Store.js";
 import { User } from "../models/User.js";
 import { Cart } from "../models/Cart.js";
 import { Wishlist } from "../models/Wishlist.js";
@@ -26,6 +29,37 @@ const parsePagination = (query) => {
   const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
   return { page, limit, skip: (page - 1) * limit };
 };
+
+const getStoreScope = (req, field = "storeId") => {
+  const isPlatformAdmin = ["admin", "super_admin"].includes(req.user?.role || "");
+  if (isPlatformAdmin) return {};
+  if (req.user?.role === "merchant" && !req.user?.storeId) return { [field]: "__no_store__" };
+  if (!req.user?.storeId) return {};
+  return { [field]: req.user.storeId };
+};
+
+const getOrderScope = (req) => {
+  const role = req.user?.role || "";
+  const isPlatformAdmin = ["admin", "super_admin"].includes(role);
+  if (isPlatformAdmin) return {};
+
+  if (role === "merchant") {
+    const storeId = req.user?.storeId || null;
+    if (storeId) {
+      return {
+        $or: [
+          { storeId },
+          { merchantUserId: req.user.id },
+        ],
+      };
+    }
+    return { merchantUserId: req.user.id };
+  }
+
+  return {};
+};
+
+const getPlatformCategoryScope = () => ({ storeId: null });
 
 const toSlug = (value) =>
   String(value || "")
@@ -46,13 +80,13 @@ const toCategoryParentId = (value) => {
   return new mongoose.Types.ObjectId(value);
 };
 
-const generateUniqueCategorySlug = async (name, { excludeId = null } = {}) => {
+const generateUniqueCategorySlug = async (name, { excludeId = null, storeId = null } = {}) => {
   const base = toSlug(name) || "category";
   let attempt = base;
   let suffix = 2;
   // Ensure globally unique slugs so product.category (string slug) remains unambiguous.
   while (true) {
-    const query = { slug: attempt };
+    const query = { slug: attempt, storeId: storeId || null };
     if (excludeId) query._id = { $ne: excludeId };
     const exists = await Category.exists(query);
     if (!exists) return attempt;
@@ -72,22 +106,33 @@ const isDescendantCategory = async (categoryId, potentialParentId) => {
   return false;
 };
 
+const platformOnly = (req, res) => {
+  if (!["admin", "super_admin"].includes(req.user?.role || "")) {
+    res.status(403).json({ message: "Platform admin access required" });
+    return false;
+  }
+  return true;
+};
+
 router.get("/dashboard", async (_req, res) => {
+  const storeScope = getStoreScope(_req);
   const startDate = new Date();
   startDate.setUTCHours(0, 0, 0, 0);
   startDate.setUTCDate(startDate.getUTCDate() - 13);
 
+  const orderBaseScope = getOrderScope(_req);
   const [productCount, categoryCount, orderCount, userCount, salesAgg, products, orders, trendRows, lowStockProducts] = await Promise.all([
-    Product.countDocuments(),
-    Category.countDocuments(),
-    Order.countDocuments(),
+    Product.countDocuments({ ...storeScope }),
+    Category.countDocuments({ ...storeScope }),
+    Order.countDocuments({ ...orderBaseScope }),
     User.countDocuments(),
-    Order.aggregate([{ $group: { _id: null, totalSales: { $sum: "$total" } } }]),
-    Product.find().select("title costPrice salePrice price stockQty"),
-    Order.find({ status: { $ne: "cancelled" } }).select("items total createdAt"),
+    Order.aggregate([{ $match: { ...orderBaseScope } }, { $group: { _id: null, totalSales: { $sum: "$total" } } }]),
+    Product.find({ ...storeScope }).select("title costPrice salePrice price stockQty"),
+    Order.find({ ...orderBaseScope, status: { $ne: "cancelled" } }).select("items total createdAt"),
     Order.aggregate([
       {
         $match: {
+          ...orderBaseScope,
           status: { $ne: "cancelled" },
           createdAt: { $gte: startDate },
         },
@@ -100,7 +145,7 @@ router.get("/dashboard", async (_req, res) => {
       },
       { $sort: { _id: 1 } },
     ]),
-    Product.find({ stockQty: { $lte: 5 } })
+    Product.find({ ...storeScope, stockQty: { $lte: 5 } })
       .sort({ stockQty: 1 })
       .limit(10)
       .select("title stockQty category"),
@@ -206,7 +251,7 @@ router.patch(
 
 router.get("/products", async (req, res) => {
   const { page, limit, skip } = parsePagination(req.query);
-  const query = {};
+  const query = { ...getStoreScope(req) };
 
   if (req.query.category) query.category = String(req.query.category);
   if (req.query.search) {
@@ -258,6 +303,12 @@ router.post(
       return res.status(400).json({ message: "Validation failed", errors: errors.array() });
     }
 
+    const storeScope = getStoreScope(req);
+    const requestedCategory = String(req.body.category || "general").trim() || "general";
+    const categoryExists = await Category.exists({ slug: requestedCategory, ...getPlatformCategoryScope() });
+    if (!categoryExists && requestedCategory !== "general") {
+      return res.status(400).json({ message: "Invalid category. Use a platform category created by super admin." });
+    }
     const images = Array.isArray(req.body.images) ? req.body.images.filter(Boolean).slice(0, 4) : [];
     const sizes = Array.isArray(req.body.sizes)
       ? req.body.sizes.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 30)
@@ -265,9 +316,10 @@ router.post(
     const imageUrl = req.body.imageUrl || images[0] || "";
 
     const product = await Product.create({
+      storeId: storeScope.storeId || null,
       title: req.body.title.trim(),
       description: req.body.description || "",
-      category: req.body.category || "general",
+      category: categoryExists ? requestedCategory : "general",
       imageUrl,
       images,
       costPrice: Number(req.body.costPrice || 0),
@@ -323,6 +375,7 @@ router.put(
       return res.status(400).json({ message: "Validation failed", errors: errors.array() });
     }
 
+    const storeScope = getStoreScope(req);
     const updates = {};
     const {
       title,
@@ -342,7 +395,14 @@ router.put(
 
     if (typeof title === "string") updates.title = title.trim();
     if (typeof description === "string") updates.description = description;
-    if (typeof category === "string") updates.category = category;
+    if (typeof category === "string") {
+      const requestedCategory = category.trim() || "general";
+      const categoryExists = await Category.exists({ slug: requestedCategory, ...getPlatformCategoryScope() });
+      if (!categoryExists && requestedCategory !== "general") {
+        return res.status(400).json({ message: "Invalid category. Use a platform category created by super admin." });
+      }
+      updates.category = categoryExists ? requestedCategory : "general";
+    }
     if (typeof imageUrl === "string") updates.imageUrl = imageUrl;
     if (Array.isArray(images)) {
       const normalized = images.filter(Boolean).slice(0, 4);
@@ -359,7 +419,7 @@ router.put(
     }
     if (Array.isArray(variants)) updates.variants = variants;
 
-    const product = await Product.findByIdAndUpdate(req.params.id, updates, {
+    const product = await Product.findOneAndUpdate({ _id: req.params.id, ...storeScope }, updates, {
       new: true,
       runValidators: true,
     });
@@ -381,7 +441,7 @@ router.delete("/products/:id", requireAdminOrAbove, async (req, res) => {
     return res.status(400).json({ message: "Invalid product id" });
   }
 
-  const deleted = await Product.findByIdAndDelete(req.params.id);
+  const deleted = await Product.findOneAndDelete({ _id: req.params.id, ...getStoreScope(req) });
   if (!deleted) return res.status(404).json({ message: "Product not found" });
 
   await logAudit(req, "product.delete", "Product", deleted.id, { title: deleted.title });
@@ -390,13 +450,13 @@ router.delete("/products/:id", requireAdminOrAbove, async (req, res) => {
 });
 
 router.get("/categories", async (_req, res) => {
-  const categories = await Category.find().populate("parentId", "name slug").sort({ name: 1 });
+  const categories = await Category.find({ ...getPlatformCategoryScope() }).populate("parentId", "name slug").sort({ name: 1 });
   res.json(categories);
 });
 
 router.post(
   "/categories",
-  requireManagerOrAbove,
+  requireSuperAdmin,
   [
     body("name").isString().trim().isLength({ min: 2 }),
     body("description").optional().isString(),
@@ -415,16 +475,17 @@ router.post(
       return res.status(400).json({ message: "Invalid parent category id" });
     }
     if (parentId) {
-      const parent = await Category.findById(parentId).select("_id");
+      const parent = await Category.findOne({ _id: parentId, ...getPlatformCategoryScope() }).select("_id");
       if (!parent) return res.status(404).json({ message: "Parent category not found" });
     }
 
-    const slug = await generateUniqueCategorySlug(name);
+    const slug = await generateUniqueCategorySlug(name, { storeId: null });
     const category = await Category.create({
       name,
       slug,
       description: req.body.description || "",
       imageUrl: normalizeCategoryImageUrl(req.body.imageUrl),
+      storeId: null,
       parentId: parentId || null,
     });
     await logAudit(req, "category.create", "Category", category.id, {
@@ -438,7 +499,7 @@ router.post(
 
 router.put(
   "/categories/:id",
-  requireManagerOrAbove,
+  requireSuperAdmin,
   [
     body("name").optional().isString().trim().isLength({ min: 2 }),
     body("description").optional().isString(),
@@ -455,7 +516,7 @@ router.put(
       return res.status(400).json({ message: "Validation failed", errors: errors.array() });
     }
 
-    const existingCategory = await Category.findById(req.params.id);
+    const existingCategory = await Category.findOne({ _id: req.params.id, ...getPlatformCategoryScope() });
     if (!existingCategory) return res.status(404).json({ message: "Category not found" });
 
     const updates = {};
@@ -470,7 +531,7 @@ router.put(
         return res.status(400).json({ message: "A category cannot be its own parent" });
       }
       if (parentId) {
-        const parent = await Category.findById(parentId).select("_id");
+        const parent = await Category.findOne({ _id: parentId, ...getPlatformCategoryScope() }).select("_id");
         if (!parent) return res.status(404).json({ message: "Parent category not found" });
         const wouldCreateCycle = await isDescendantCategory(req.params.id, parentId);
         if (wouldCreateCycle) {
@@ -483,12 +544,15 @@ router.put(
     let oldSlug = existingCategory.slug;
     if (typeof req.body.name === "string") {
       const name = req.body.name.trim();
-      const slug = await generateUniqueCategorySlug(name, { excludeId: req.params.id });
+      const slug = await generateUniqueCategorySlug(name, {
+        excludeId: req.params.id,
+        storeId: null,
+      });
       updates.name = name;
       updates.slug = slug;
     }
 
-    const category = await Category.findByIdAndUpdate(req.params.id, updates, {
+    const category = await Category.findOneAndUpdate({ _id: req.params.id, ...getPlatformCategoryScope() }, updates, {
       new: true,
       runValidators: true,
     });
@@ -508,15 +572,15 @@ router.put(
   }
 );
 
-router.delete("/categories/:id", requireAdminOrAbove, async (req, res) => {
+router.delete("/categories/:id", requireSuperAdmin, async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
     return res.status(400).json({ message: "Invalid category id" });
   }
 
-  const category = await Category.findByIdAndDelete(req.params.id);
+  const category = await Category.findOneAndDelete({ _id: req.params.id, ...getPlatformCategoryScope() });
   if (!category) return res.status(404).json({ message: "Category not found" });
 
-  await Category.updateMany({ parentId: category._id }, { $set: { parentId: null } });
+  await Category.updateMany({ parentId: category._id, ...getPlatformCategoryScope() }, { $set: { parentId: null } });
   await Product.updateMany({ category: category.slug }, { $set: { category: "general" } });
   await logAudit(req, "category.delete", "Category", category.id, { name: category.name, slug: category.slug });
   res.json({ message: "Category deleted" });
@@ -524,7 +588,7 @@ router.delete("/categories/:id", requireAdminOrAbove, async (req, res) => {
 
 router.get("/orders", async (req, res) => {
   const { page, limit, skip } = parsePagination(req.query);
-  const query = {};
+  const query = { ...getOrderScope(req) };
   if (req.query.status) query.status = String(req.query.status);
 
   const [items, total] = await Promise.all([
@@ -553,8 +617,8 @@ router.patch(
       return res.status(400).json({ message: "Validation failed", errors: errors.array() });
     }
 
-    const order = await Order.findByIdAndUpdate(
-      req.params.id,
+    const order = await Order.findOneAndUpdate(
+      { _id: req.params.id, ...getOrderScope(req) },
       { status: req.body.status },
       { new: true, runValidators: true }
     ).populate("userId", "name email");
@@ -588,7 +652,7 @@ router.patch(
       return res.status(400).json({ message: "Validation failed", errors: errors.array() });
     }
 
-    const order = await Order.findById(req.params.id).populate("userId", "name email");
+    const order = await Order.findOne({ _id: req.params.id, ...getOrderScope(req) }).populate("userId", "name email");
     if (!order) return res.status(404).json({ message: "Order not found" });
 
     order.shippingDetails = order.shippingDetails || {};
@@ -614,6 +678,10 @@ router.patch(
 );
 
 router.get("/users", async (req, res) => {
+  const storeScope = getStoreScope(req);
+  if (storeScope.storeId) {
+    return res.status(403).json({ message: "User directory is only available to platform admins" });
+  }
   const { page, limit, skip } = parsePagination(req.query);
   const query = {};
   if (req.query.search) {
@@ -636,6 +704,159 @@ router.get("/users", async (req, res) => {
 
   res.json({ items, total, page, limit });
 });
+
+router.get("/merchants", requireAdminOrAbove, async (req, res) => {
+  if (!platformOnly(req, res)) return;
+  const { page, limit, skip } = parsePagination(req.query);
+  const query = { role: "merchant", storeId: { $ne: null } };
+  if (req.query.search) {
+    const pattern = String(req.query.search);
+    query.$or = [{ name: { $regex: pattern, $options: "i" } }, { email: { $regex: pattern, $options: "i" } }];
+  }
+
+  const [items, total] = await Promise.all([
+    User.find(query).select("name email role storeId createdAt").sort({ createdAt: -1 }).skip(skip).limit(limit),
+    User.countDocuments(query),
+  ]);
+  const storeIds = items.map((item) => item.storeId).filter(Boolean);
+  const stores = await Store.find({ _id: { $in: storeIds } }).select("name slug isActive ownerUserId");
+  const storeMap = new Map(stores.map((store) => [String(store._id), store]));
+  const enriched = items.map((item) => ({
+    ...item.toObject(),
+    store: item.storeId ? storeMap.get(String(item.storeId)) || null : null,
+  }));
+
+  res.json({ items: enriched, total, page, limit });
+});
+
+router.post(
+  "/merchants",
+  requireAdminOrAbove,
+  [
+    body("name").isString().trim().isLength({ min: 2, max: 80 }),
+    body("email").isEmail().normalizeEmail(),
+    body("password").isString().isLength({ min: 6 }),
+    body("storeName").isString().trim().isLength({ min: 2, max: 120 }),
+  ],
+  async (req, res) => {
+    if (!platformOnly(req, res)) return;
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ message: "Validation failed", errors: errors.array() });
+
+    const email = String(req.body.email).trim().toLowerCase();
+    const existing = await User.findOne({ email });
+    if (existing) return res.status(409).json({ message: "Email already in use" });
+
+    let createdUser = null;
+    try {
+      const passwordHash = await bcrypt.hash(req.body.password, 12);
+      const storeSlugBase = toSlug(req.body.storeName) || "store";
+      let storeSlug = storeSlugBase;
+      let suffix = 2;
+      while (await Store.exists({ slug: storeSlug })) {
+        storeSlug = `${storeSlugBase}-${suffix}`;
+        suffix += 1;
+      }
+
+      createdUser = await User.create({
+        name: String(req.body.name).trim(),
+        email,
+        passwordHash,
+        role: "merchant",
+      });
+      const store = await Store.create({
+        name: String(req.body.storeName).trim(),
+        slug: storeSlug,
+        ownerUserId: createdUser._id,
+        isActive: true,
+      });
+      createdUser.storeId = store._id;
+      await createdUser.save();
+
+      await logAudit(req, "merchant.create", "User", createdUser.id, { email: createdUser.email, storeId: String(store._id) });
+      res.status(201).json({
+        user: { id: createdUser.id, name: createdUser.name, email: createdUser.email, role: createdUser.role, storeId: String(store._id) },
+        store,
+      });
+    } catch (error) {
+      if (createdUser?._id) {
+        await User.deleteOne({ _id: createdUser._id });
+      }
+      if (error?.code === 11000) {
+        return res.status(409).json({ message: "Merchant or store already exists with same unique value" });
+      }
+      throw error;
+    }
+  }
+);
+
+router.patch(
+  "/merchants/:id",
+  requireAdminOrAbove,
+  [body("isActive").optional().isBoolean(), body("storeName").optional().isString().trim().isLength({ min: 2, max: 120 })],
+  async (req, res) => {
+    if (!platformOnly(req, res)) return;
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: "Invalid merchant id" });
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ message: "Validation failed", errors: errors.array() });
+
+    const merchant = await User.findOne({ _id: req.params.id, role: "merchant" }).select("name email role storeId");
+    if (!merchant?.storeId) return res.status(404).json({ message: "Merchant not found" });
+
+    const store = await Store.findById(merchant.storeId);
+    if (!store) return res.status(404).json({ message: "Store not found" });
+
+    if (req.body.isActive !== undefined) store.isActive = Boolean(req.body.isActive);
+    if (typeof req.body.storeName === "string") store.name = req.body.storeName.trim();
+    await store.save();
+
+    await logAudit(req, "merchant.update", "Store", store.id, { isActive: store.isActive, storeName: store.name });
+    res.json({ merchant, store });
+  }
+);
+
+router.get("/disputes", async (req, res) => {
+  const { page, limit, skip } = parsePagination(req.query);
+  const query = { ...getStoreScope(req) };
+  if (req.query.status) query.status = String(req.query.status);
+
+  const [items, total] = await Promise.all([
+    Dispute.find(query)
+      .populate("orderId", "_id total status")
+      .populate("customerUserId", "name email")
+      .populate("merchantUserId", "name email")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit),
+    Dispute.countDocuments(query),
+  ]);
+
+  res.json({ items, total, page, limit });
+});
+
+router.patch(
+  "/disputes/:id",
+  [body("status").optional().isString().isIn(["open", "in_review", "resolved", "rejected"]), body("resolutionNote").optional().isString()],
+  async (req, res) => {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: "Invalid dispute id" });
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ message: "Validation failed", errors: errors.array() });
+
+    const dispute = await Dispute.findOne({ _id: req.params.id, ...getStoreScope(req) });
+    if (!dispute) return res.status(404).json({ message: "Dispute not found" });
+
+    if (typeof req.body.status === "string") dispute.status = req.body.status;
+    if (typeof req.body.resolutionNote === "string") dispute.resolutionNote = req.body.resolutionNote;
+    if (["resolved", "rejected"].includes(dispute.status)) {
+      dispute.resolvedByUserId = req.user.id;
+      dispute.resolvedAt = new Date();
+    }
+    await dispute.save();
+
+    await logAudit(req, "dispute.update", "Dispute", dispute.id, { status: dispute.status });
+    res.json(dispute);
+  }
+);
 
 router.post(
   "/users",
@@ -751,7 +972,7 @@ router.delete("/users/:id", requireAdminOrAbove, async (req, res) => {
 });
 
 router.get("/sales", async (req, res) => {
-  const match = {};
+  const match = { ...getOrderScope(req) };
   if (req.query.from || req.query.to) {
     match.createdAt = {};
     if (req.query.from) match.createdAt.$gte = new Date(String(req.query.from));
@@ -808,7 +1029,7 @@ router.get("/sales", async (req, res) => {
 });
 
 router.get("/sales/export.csv", async (req, res) => {
-  const match = {};
+  const match = { ...getOrderScope(req) };
   if (req.query.from || req.query.to) {
     match.createdAt = {};
     if (req.query.from) match.createdAt.$gte = new Date(String(req.query.from));
@@ -839,7 +1060,7 @@ router.get("/sales/export.csv", async (req, res) => {
 });
 
 router.get("/sales/export.pdf", async (req, res) => {
-  const match = {};
+  const match = { ...getOrderScope(req) };
   if (req.query.from || req.query.to) {
     match.createdAt = {};
     if (req.query.from) match.createdAt.$gte = new Date(String(req.query.from));
@@ -877,7 +1098,7 @@ router.get("/sales/export.pdf", async (req, res) => {
 });
 
 router.get("/coupons", async (_req, res) => {
-  const coupons = await Coupon.find().sort({ createdAt: -1 });
+  const coupons = await Coupon.find({ ...getStoreScope(_req) }).sort({ createdAt: -1 });
   res.json(coupons);
 });
 
@@ -901,11 +1122,13 @@ router.post(
       return res.status(400).json({ message: "Validation failed", errors: errors.array() });
     }
 
+    const storeScope = getStoreScope(req);
     const code = String(req.body.code).trim().toUpperCase();
-    const exists = await Coupon.findOne({ code });
+    const exists = await Coupon.findOne({ code, ...storeScope });
     if (exists) return res.status(409).json({ message: "Coupon code already exists" });
 
     const coupon = await Coupon.create({
+      storeId: storeScope.storeId || null,
       code,
       description: req.body.description || "",
       discountType: req.body.discountType,
@@ -958,7 +1181,7 @@ router.put(
     if (req.body.startsAt) updates.startsAt = new Date(req.body.startsAt);
     if (req.body.endsAt) updates.endsAt = new Date(req.body.endsAt);
 
-    const coupon = await Coupon.findByIdAndUpdate(req.params.id, updates, { new: true, runValidators: true });
+    const coupon = await Coupon.findOneAndUpdate({ _id: req.params.id, ...getStoreScope(req) }, updates, { new: true, runValidators: true });
     if (!coupon) return res.status(404).json({ message: "Coupon not found" });
 
     await logAudit(req, "coupon.update", "Coupon", coupon.id, { code: coupon.code });
@@ -970,7 +1193,7 @@ router.delete("/coupons/:id", requireAdminOrAbove, async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
     return res.status(400).json({ message: "Invalid coupon id" });
   }
-  const coupon = await Coupon.findByIdAndDelete(req.params.id);
+  const coupon = await Coupon.findOneAndDelete({ _id: req.params.id, ...getStoreScope(req) });
   if (!coupon) return res.status(404).json({ message: "Coupon not found" });
   await logAudit(req, "coupon.delete", "Coupon", coupon.id, { code: coupon.code });
   res.json({ message: "Coupon deleted" });
