@@ -17,7 +17,7 @@ export const CategoriesPage = () => {
   const navigate = useNavigate();
   const { showToast } = useToast();
   const { user } = useAuth();
-  const isSuperAdmin = user?.role === "super_admin";
+  const canManageCategories = ["admin", "super_admin"].includes(user?.role || "");
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -117,12 +117,12 @@ export const CategoriesPage = () => {
       <PageHeader
         title="Categories"
         description={
-          isSuperAdmin
+          canManageCategories
             ? "Organize catalog structure and parent relationships."
-            : "Categories are managed by super admin. You can only view and use them when creating products."
+            : "Categories are managed by admins. You can only view and use them when creating products."
         }
         action={
-          isSuperAdmin ? (
+          canManageCategories ? (
             <Button
               onClick={() => {
                 setEditingCategory(null);
@@ -161,11 +161,11 @@ export const CategoriesPage = () => {
         <EmptyState
           title="No categories available"
           description={
-            isSuperAdmin
+            canManageCategories
               ? "Create categories to improve product discoverability."
-              : "No categories have been created by super admin yet."
+              : "No categories have been created by admins yet."
           }
-          action={isSuperAdmin ? <Button onClick={() => setIsModalOpen(true)}>Add Category</Button> : null}
+          action={canManageCategories ? <Button onClick={() => setIsModalOpen(true)}>Add Category</Button> : null}
         />
       ) : null}
 
@@ -206,7 +206,7 @@ export const CategoriesPage = () => {
                 <Badge tone={category.parentId ? "info" : "success"}>{category.parentId ? "Subcategory" : "Category"}</Badge>
               </Td>
               <Td className="text-right">
-                {isSuperAdmin ? (
+                {canManageCategories ? (
                   <div className="flex justify-end">
                     <RowActions
                       onEdit={() => {
@@ -225,7 +225,7 @@ export const CategoriesPage = () => {
         />
       ) : null}
 
-      {isSuperAdmin ? (
+      {canManageCategories ? (
         <CategoryModal
           isOpen={isModalOpen}
           onClose={() => {

@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -61,6 +62,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.layout.ContentScale
@@ -485,97 +487,194 @@ private fun QuickProfileItem(title: String, onClick: (() -> Unit)? = null) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StoresScreen(
     stores: List<BackendStore>,
     selectedStoreSlug: String? = null,
     isLoading: Boolean = false,
+    isSelectingStore: Boolean = false,
     errorMessage: String? = null,
     onRetry: () -> Unit = {},
+    onRefresh: () -> Unit = {},
     onStoreClick: (BackendStore) -> Unit = {},
     onBackToMarket: () -> Unit = {}
 ) {
+    var searchQuery by remember { mutableStateOf("") }
     val activeStores = stores.filter { it.isActive }
-    Column(
+    val visibleStores = activeStores.filter { store ->
+        searchQuery.isBlank() ||
+            store.name.contains(searchQuery, ignoreCase = true) ||
+            store.slug.contains(searchQuery, ignoreCase = true)
+    }
+    val pullToRefreshState = rememberPullToRefreshState()
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(16.dp)
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+        PullToRefreshBox(
+            isRefreshing = isLoading && !isSelectingStore,
+            onRefresh = onRefresh,
+            state = pullToRefreshState,
+            modifier = Modifier.fillMaxSize()
         ) {
-            Text("Stores", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            if (!selectedStoreSlug.isNullOrBlank()) {
-                TextButton(onClick = onBackToMarket) { Text("Back to market") }
-            }
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        if (isLoading) {
-            Text("Loading stores...", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        } else if (!errorMessage.isNullOrBlank()) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(errorMessage, color = MaterialTheme.colorScheme.error)
-                TextButton(onClick = onRetry) { Text("Retry") }
-            }
-        } else if (activeStores.isEmpty()) {
-            AppEmptyState("No stores", "Stores will appear here.")
-        } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(activeStores, key = { it.id }) { store ->
-                    val selected = selectedStoreSlug == store.slug
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onStoreClick(store) },
-                        shape = RoundedCornerShape(14.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (selected) {
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
-                            } else {
-                                MaterialTheme.colorScheme.surface
-                            }
-                        )
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Stores", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    if (!selectedStoreSlug.isNullOrBlank()) {
+                        TextButton(onClick = onBackToMarket) { Text("Back to market") }
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    placeholder = { Text("Search stores...") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search stores") },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
+                    )
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                if (isLoading && visibleStores.isEmpty() && !isSelectingStore) {
+                    Text("Loading stores...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else if (!errorMessage.isNullOrBlank()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(errorMessage, color = MaterialTheme.colorScheme.error)
+                        TextButton(onClick = onRetry) { Text("Retry") }
+                    }
+                } else if (visibleStores.isEmpty()) {
+                    AppEmptyState("No stores", "Stores will appear here.")
+                } else {
+                    LazyVerticalGrid(
+                        modifier = Modifier.fillMaxSize(),
+                        columns = GridCells.Fixed(4),
+                        horizontalArrangement = Arrangement.spacedBy(1.dp),
+                        verticalArrangement = Arrangement.spacedBy(1.dp),
+                        contentPadding = PaddingValues(bottom = 1.dp)
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            ProductImage(
-                                model = store.logoUrl.orEmpty(),
-                                contentDescription = store.name,
-                                contentScale = ContentScale.Crop,
+                        items(visibleStores, key = { it.id }) { store ->
+                            val selected = selectedStoreSlug == store.slug
+                            Card(
                                 modifier = Modifier
-                                    .size(56.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
-                            )
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(store.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                                Text(
-                                    store.description?.ifBlank { "Open store" } ?: "Open store",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
+                                    .fillMaxWidth()
+                                    .clickable(enabled = !isSelectingStore) { onStoreClick(store) }
+                                    .padding(1.dp),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = Color.White
                                 )
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 6.dp, horizontal = 4.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    val hasLogo = store.logoUrl?.trim().orEmpty().isNotBlank()
+                                    if (hasLogo) {
+                                        ProductImage(
+                                            model = store.logoUrl.orEmpty(),
+                                            contentDescription = store.name,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier
+                                                .size(62.dp)
+                                                .clip(RoundedCornerShape(12.dp))
+                                        )
+                                    } else {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(62.dp)
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(storeInitialsColor(store.slug)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = storeInitials(store.name),
+                                                style = MaterialTheme.typography.titleSmall,
+                                                color = Color.White,
+                                                fontWeight = FontWeight.ExtraBold
+                                            )
+                                        }
+                                    }
+                                    Text(
+                                        store.name,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
                             }
-                            Icon(
-                                imageVector = Icons.Default.ChevronRight,
-                                contentDescription = "Open ${store.name}",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
                         }
                     }
                 }
             }
         }
+        if (isSelectingStore) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.82f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    CircularProgressIndicator()
+                    Text(
+                        "Opening store...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+        }
     }
+}
+
+private fun storeInitials(name: String): String {
+    val compact = name.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+    if (compact.isEmpty()) return "ST"
+    val first = compact.first().firstOrNull()?.uppercaseChar() ?: 'S'
+    val second = if (compact.size > 1) {
+        compact[1].firstOrNull()?.uppercaseChar() ?: 'T'
+    } else {
+        compact.first().drop(1).firstOrNull()?.uppercaseChar() ?: 'T'
+    }
+    return "$first$second"
+}
+
+private fun storeInitialsColor(key: String): Color {
+    val palette = listOf(
+        Color(0xFFEF6C00),
+        Color(0xFF1E88E5),
+        Color(0xFF43A047),
+        Color(0xFFE53935),
+        Color(0xFF8E24AA),
+        Color(0xFF00897B),
+        Color(0xFF3949AB),
+        Color(0xFF6D4C41)
+    )
+    val index = (key.hashCode().let { if (it == Int.MIN_VALUE) 0 else kotlin.math.abs(it) }) % palette.size
+    return palette[index]
 }
 
 @Composable

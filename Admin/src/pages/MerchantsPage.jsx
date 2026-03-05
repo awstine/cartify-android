@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { Button } from "../components/ui/Button";
-import { Field, Input, Select } from "../components/ui/Field";
+import { Field, Input, Select, Textarea } from "../components/ui/Field";
 import { Modal } from "../components/ui/Modal";
 import { PageHeader, Toolbar } from "../components/ui/PageHeader";
 import { Pagination } from "../components/ui/Pagination";
@@ -26,7 +26,12 @@ export const MerchantsPage = () => {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
   const [updatingId, setUpdatingId] = useState("");
-  const [form, setForm] = useState({ name: "", email: "", password: "", storeName: "" });
+  const [form, setForm] = useState({ name: "", email: "", password: "", storeName: "", storeLogoUrl: "", storeDescription: "" });
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState("");
+  const [editForm, setEditForm] = useState({ storeName: "", storeLogoUrl: "", storeDescription: "", isActive: "active" });
 
   const canManage = ["admin", "super_admin"].includes(user?.role || "");
 
@@ -59,10 +64,12 @@ export const MerchantsPage = () => {
         email: form.email.trim(),
         password: form.password,
         storeName: form.storeName.trim(),
+        storeLogoUrl: form.storeLogoUrl.trim(),
+        storeDescription: form.storeDescription.trim(),
       });
       showToast({ type: "success", title: "Merchant created" });
       setIsCreateOpen(false);
-      setForm({ name: "", email: "", password: "", storeName: "" });
+      setForm({ name: "", email: "", password: "", storeName: "", storeLogoUrl: "", storeDescription: "" });
       await loadMerchants();
     } catch (err) {
       const validationErrors = Array.isArray(err?.response?.data?.errors)
@@ -87,6 +94,73 @@ export const MerchantsPage = () => {
       showToast({ type: "error", title: "Failed to update merchant", message: err?.response?.data?.message || "Try again." });
     } finally {
       setUpdatingId("");
+    }
+  };
+
+  const readImageAsDataUrl = (file) =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+  const handleCreateLogoUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const encoded = await readImageAsDataUrl(file);
+      setForm((prev) => ({ ...prev, storeLogoUrl: encoded }));
+    } catch (_err) {
+      showToast({ type: "error", title: "Failed to read image file" });
+    }
+  };
+
+  const handleEditLogoUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const encoded = await readImageAsDataUrl(file);
+      setEditForm((prev) => ({ ...prev, storeLogoUrl: encoded }));
+    } catch (_err) {
+      showToast({ type: "error", title: "Failed to read image file" });
+    }
+  };
+
+  const openEditModal = (item) => {
+    setEditingItem(item);
+    setEditError("");
+    setEditForm({
+      storeName: item.store?.name || "",
+      storeLogoUrl: item.store?.logoUrl || "",
+      storeDescription: item.store?.description || "",
+      isActive: item.store?.isActive ? "active" : "suspended",
+    });
+    setIsEditOpen(true);
+  };
+
+  const saveMerchantStore = async (event) => {
+    event.preventDefault();
+    if (!editingItem?._id || !canManage) return;
+    setSavingEdit(true);
+    setEditError("");
+    try {
+      await api.patch(`/admin/merchants/${editingItem._id}`, {
+        storeName: editForm.storeName.trim(),
+        storeLogoUrl: editForm.storeLogoUrl.trim(),
+        storeDescription: editForm.storeDescription,
+        isActive: editForm.isActive === "active",
+      });
+      showToast({ type: "success", title: "Store updated" });
+      setIsEditOpen(false);
+      setEditingItem(null);
+      await loadMerchants();
+    } catch (err) {
+      const message = err?.response?.data?.message || "Try again.";
+      setEditError(message);
+      showToast({ type: "error", title: "Failed to update store", message });
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -136,21 +210,29 @@ export const MerchantsPage = () => {
                 <Td>
                   <p className="font-medium">{item.store?.name || "N/A"}</p>
                   <p className="text-xs text-slate-500">{item.store?.slug || "-"}</p>
+                  {item.store?.logoUrl ? (
+                    <img src={item.store.logoUrl} alt={`${item.store?.name || "Store"} logo`} className="mt-2 h-10 w-10 rounded-full border border-slate-200 object-cover" />
+                  ) : null}
                 </Td>
                 <Td>
                   <Badge tone={item.store?.isActive ? "success" : "danger"}>{item.store?.isActive ? "Active" : "Suspended"}</Badge>
                 </Td>
                 <Td>
                   {canManage ? (
-                    <Select
-                      value={item.store?.isActive ? "active" : "suspended"}
-                      onChange={(event) => updateMerchantStatus(item._id, event.target.value === "active")}
-                      disabled={updatingId === item._id}
-                      className="min-w-[140px]"
-                    >
-                      <option value="active">Active</option>
-                      <option value="suspended">Suspended</option>
-                    </Select>
+                    <div className="flex items-center gap-2">
+                      <Select
+                        value={item.store?.isActive ? "active" : "suspended"}
+                        onChange={(event) => updateMerchantStatus(item._id, event.target.value === "active")}
+                        disabled={updatingId === item._id}
+                        className="min-w-[140px]"
+                      >
+                        <option value="active">Active</option>
+                        <option value="suspended">Suspended</option>
+                      </Select>
+                      <Button variant="secondary" className="px-3 py-1.5" onClick={() => openEditModal(item)}>
+                        Edit
+                      </Button>
+                    </div>
                   ) : (
                     <span className="text-xs text-slate-500">View only</span>
                   )}
@@ -190,7 +272,60 @@ export const MerchantsPage = () => {
           <Field label="Store Name" htmlFor="merchant-store-name">
             <Input id="merchant-store-name" required value={form.storeName} onChange={(event) => setForm((prev) => ({ ...prev, storeName: event.target.value }))} />
           </Field>
+          <Field label="Store Logo URL" htmlFor="merchant-store-logo">
+            <Input id="merchant-store-logo" value={form.storeLogoUrl} onChange={(event) => setForm((prev) => ({ ...prev, storeLogoUrl: event.target.value }))} />
+          </Field>
+          <Field label="Or Upload Store Logo" htmlFor="merchant-store-logo-upload">
+            <Input id="merchant-store-logo-upload" type="file" accept="image/*" onChange={handleCreateLogoUpload} />
+          </Field>
+          {form.storeLogoUrl ? (
+            <img src={form.storeLogoUrl} alt="Store logo preview" className="h-14 w-14 rounded-full border border-slate-200 object-cover" />
+          ) : null}
+          <Field label="Store Description" htmlFor="merchant-store-description">
+            <Textarea id="merchant-store-description" rows={3} value={form.storeDescription} onChange={(event) => setForm((prev) => ({ ...prev, storeDescription: event.target.value }))} />
+          </Field>
           {createError ? <p className="text-sm text-red-600">{createError}</p> : null}
+        </form>
+      </Modal>
+
+      <Modal
+        isOpen={isEditOpen}
+        onClose={() => setIsEditOpen(false)}
+        title="Edit Merchant Store"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setIsEditOpen(false)} disabled={savingEdit}>
+              Cancel
+            </Button>
+            <Button type="submit" form="merchant-edit-form" loading={savingEdit}>
+              Save
+            </Button>
+          </>
+        }
+      >
+        <form id="merchant-edit-form" onSubmit={saveMerchantStore} className="grid gap-3">
+          <Field label="Store Name" htmlFor="edit-store-name">
+            <Input id="edit-store-name" required value={editForm.storeName} onChange={(event) => setEditForm((prev) => ({ ...prev, storeName: event.target.value }))} />
+          </Field>
+          <Field label="Store Status" htmlFor="edit-store-status">
+            <Select id="edit-store-status" value={editForm.isActive} onChange={(event) => setEditForm((prev) => ({ ...prev, isActive: event.target.value }))}>
+              <option value="active">Active</option>
+              <option value="suspended">Suspended</option>
+            </Select>
+          </Field>
+          <Field label="Store Logo URL" htmlFor="edit-store-logo">
+            <Input id="edit-store-logo" value={editForm.storeLogoUrl} onChange={(event) => setEditForm((prev) => ({ ...prev, storeLogoUrl: event.target.value }))} />
+          </Field>
+          <Field label="Or Upload Store Logo" htmlFor="edit-store-logo-upload">
+            <Input id="edit-store-logo-upload" type="file" accept="image/*" onChange={handleEditLogoUpload} />
+          </Field>
+          {editForm.storeLogoUrl ? (
+            <img src={editForm.storeLogoUrl} alt="Store logo preview" className="h-14 w-14 rounded-full border border-slate-200 object-cover" />
+          ) : null}
+          <Field label="Store Description" htmlFor="edit-store-description">
+            <Textarea id="edit-store-description" rows={3} value={editForm.storeDescription} onChange={(event) => setEditForm((prev) => ({ ...prev, storeDescription: event.target.value }))} />
+          </Field>
+          {editError ? <p className="text-sm text-red-600">{editError}</p> : null}
         </form>
       </Modal>
     </div>

@@ -37,6 +37,7 @@ app.use("/api/wishlist", wishlistRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/stores", storeRoutes);
+app.use("/stores", storeRoutes);
 
 app.use((err, _req, res, _next) => {
   console.error(err);

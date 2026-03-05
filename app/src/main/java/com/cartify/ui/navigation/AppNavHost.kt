@@ -112,7 +112,7 @@ fun AppNavHost(
     var storeModeProducts by remember { mutableStateOf<List<Product>>(emptyList()) }
     var storeModeLoading by remember { mutableStateOf(false) }
     var storeModeError by remember { mutableStateOf<String?>(null) }
-    var storeModeRefreshTick by remember { mutableStateOf(0) }
+    var openingStore by remember { mutableStateOf(false) }
     val scopedProducts = remember(productUiState.products, currentStoreSlug, storeModeProducts) {
         if (currentStoreSlug.isNullOrBlank()) productUiState.products else storeModeProducts
     }
@@ -150,30 +150,36 @@ fun AppNavHost(
         }
     }
 
-    LaunchedEffect(Unit) {
-        productViewModel.retryLoad()
-        loadStores()
+    fun clearStoreMode() {
+        currentStoreSlug = null
+        currentStoreName = null
+        storeModeProducts = emptyList()
+        storeModeError = null
+        storeModeLoading = false
+        openingStore = false
     }
 
-    LaunchedEffect(currentStoreSlug, storeModeRefreshTick) {
-        val slug = currentStoreSlug?.trim().orEmpty()
-        if (slug.isBlank()) {
-            storeModeProducts = emptyList()
-            storeModeError = null
-            storeModeLoading = false
-            return@LaunchedEffect
-        }
+    suspend fun loadStoreProductsBySlug(slug: String): Boolean {
+        val safeSlug = slug.trim()
+        if (safeSlug.isBlank()) return false
         storeModeLoading = true
         storeModeError = null
-        runCatching { backendRepository.getProducts(storeSlug = slug) }
+        val result = runCatching { backendRepository.getProducts(storeSlug = safeSlug) }
+        result
             .onSuccess { backendProducts ->
-                storeModeProducts = backendProducts.toUiProductsForStore(slug)
+                storeModeProducts = backendProducts.toUiProductsForStore(safeSlug)
             }
             .onFailure { throwable ->
                 storeModeProducts = emptyList()
                 storeModeError = throwable.message ?: "Unable to load store products"
             }
         storeModeLoading = false
+        return result.isSuccess
+    }
+
+    LaunchedEffect(Unit) {
+        productViewModel.retryLoad()
+        loadStores()
     }
 
     LaunchedEffect(isLoggedIn, session.token) {
@@ -389,13 +395,11 @@ fun AppNavHost(
                     productsOverrideLoading = if (currentStoreSlug.isNullOrBlank()) false else storeModeLoading,
                     productsOverrideError = if (currentStoreSlug.isNullOrBlank()) null else storeModeError,
                     onRetryProductsOverride = {
-                        storeModeRefreshTick += 1
+                        val slug = currentStoreSlug?.trim().orEmpty()
+                        if (slug.isNotBlank()) scope.launch { loadStoreProductsBySlug(slug) }
                     },
                     storeModeLabel = currentStoreName,
-                    onBackToMarket = {
-                        currentStoreSlug = null
-                        currentStoreName = null
-                    }
+                    onBackToMarket = ::clearStoreMode
                 )
             }
             composable(NavigationItem.Categories.route) {
@@ -407,28 +411,35 @@ fun AppNavHost(
                         navController.navigate(NavigationItem.Products.route) { launchSingleTop = true }
                     },
                     storeModeLabel = currentStoreName,
-                    onBackToMarket = {
-                        currentStoreSlug = null
-                        currentStoreName = null
-                    }
+                    onBackToMarket = ::clearStoreMode
                 )
             }
             composable(NavigationItem.Stores.route) {
                 StoresScreen(
                     stores = stores,
                     selectedStoreSlug = currentStoreSlug,
-                    isLoading = storesLoading,
+                    isLoading = storesLoading || storeModeLoading,
+                    isSelectingStore = openingStore,
                     errorMessage = storesError,
                     onRetry = { loadStores() },
+                    onRefresh = { loadStores() },
                     onStoreClick = { store ->
-                        currentStoreSlug = store.slug
-                        currentStoreName = store.name
-                        navController.navigate(NavigationItem.Products.route) { launchSingleTop = true }
+                        scope.launch {
+                            openingStore = true
+                            currentStoreSlug = store.slug
+                            currentStoreName = store.name
+                            val loaded = loadStoreProductsBySlug(store.slug)
+                            if (loaded) {
+                                openingStore = false
+                                navController.navigate(NavigationItem.Products.route) { launchSingleTop = true }
+                            } else {
+                                clearStoreMode()
+                                openingStore = false
+                                snackbarHostState.showSnackbar(storeModeError ?: "Unable to open store")
+                            }
+                        }
                     },
-                    onBackToMarket = {
-                        currentStoreSlug = null
-                        currentStoreName = null
-                    }
+                    onBackToMarket = ::clearStoreMode
                 )
             }
             composable(NavigationItem.Wishlist.route) {
@@ -520,11 +531,11 @@ fun AppNavHost(
                     onOpenStores = { navigateWithPrefetch(NavigationItem.Stores.route) },
                     storeModeLabel = currentStoreName,
                     storeModeError = if (currentStoreSlug.isNullOrBlank()) null else storeModeError,
-                    onRetryStoreMode = { storeModeRefreshTick += 1 },
-                    onBackToMarket = {
-                        currentStoreSlug = null
-                        currentStoreName = null
-                    }
+                    onRetryStoreMode = {
+                        val slug = currentStoreSlug?.trim().orEmpty()
+                        if (slug.isNotBlank()) scope.launch { loadStoreProductsBySlug(slug) }
+                    },
+                    onBackToMarket = ::clearStoreMode
                 )
             }
             composable(NavigationItem.Orders.route) {

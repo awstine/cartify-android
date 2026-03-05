@@ -456,7 +456,7 @@ router.get("/categories", async (_req, res) => {
 
 router.post(
   "/categories",
-  requireSuperAdmin,
+  requireAdminOrAbove,
   [
     body("name").isString().trim().isLength({ min: 2 }),
     body("description").optional().isString(),
@@ -499,7 +499,7 @@ router.post(
 
 router.put(
   "/categories/:id",
-  requireSuperAdmin,
+  requireAdminOrAbove,
   [
     body("name").optional().isString().trim().isLength({ min: 2 }),
     body("description").optional().isString(),
@@ -572,7 +572,7 @@ router.put(
   }
 );
 
-router.delete("/categories/:id", requireSuperAdmin, async (req, res) => {
+router.delete("/categories/:id", requireAdminOrAbove, async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
     return res.status(400).json({ message: "Invalid category id" });
   }
@@ -719,7 +719,7 @@ router.get("/merchants", requireAdminOrAbove, async (req, res) => {
     User.countDocuments(query),
   ]);
   const storeIds = items.map((item) => item.storeId).filter(Boolean);
-  const stores = await Store.find({ _id: { $in: storeIds } }).select("name slug isActive ownerUserId");
+  const stores = await Store.find({ _id: { $in: storeIds } }).select("name slug description logoUrl isActive ownerUserId");
   const storeMap = new Map(stores.map((store) => [String(store._id), store]));
   const enriched = items.map((item) => ({
     ...item.toObject(),
@@ -737,6 +737,8 @@ router.post(
     body("email").isEmail().normalizeEmail(),
     body("password").isString().isLength({ min: 6 }),
     body("storeName").isString().trim().isLength({ min: 2, max: 120 }),
+    body("storeLogoUrl").optional().isString(),
+    body("storeDescription").optional().isString(),
   ],
   async (req, res) => {
     if (!platformOnly(req, res)) return;
@@ -768,6 +770,8 @@ router.post(
         name: String(req.body.storeName).trim(),
         slug: storeSlug,
         ownerUserId: createdUser._id,
+        logoUrl: String(req.body.storeLogoUrl || "").trim(),
+        description: String(req.body.storeDescription || "").trim(),
         isActive: true,
       });
       createdUser.storeId = store._id;
@@ -793,7 +797,12 @@ router.post(
 router.patch(
   "/merchants/:id",
   requireAdminOrAbove,
-  [body("isActive").optional().isBoolean(), body("storeName").optional().isString().trim().isLength({ min: 2, max: 120 })],
+  [
+    body("isActive").optional().isBoolean(),
+    body("storeName").optional().isString().trim().isLength({ min: 2, max: 120 }),
+    body("storeLogoUrl").optional().isString(),
+    body("storeDescription").optional().isString(),
+  ],
   async (req, res) => {
     if (!platformOnly(req, res)) return;
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ message: "Invalid merchant id" });
@@ -808,9 +817,15 @@ router.patch(
 
     if (req.body.isActive !== undefined) store.isActive = Boolean(req.body.isActive);
     if (typeof req.body.storeName === "string") store.name = req.body.storeName.trim();
+    if (typeof req.body.storeLogoUrl === "string") store.logoUrl = req.body.storeLogoUrl.trim();
+    if (typeof req.body.storeDescription === "string") store.description = req.body.storeDescription;
     await store.save();
 
-    await logAudit(req, "merchant.update", "Store", store.id, { isActive: store.isActive, storeName: store.name });
+    await logAudit(req, "merchant.update", "Store", store.id, {
+      isActive: store.isActive,
+      storeName: store.name,
+      hasLogo: Boolean(store.logoUrl),
+    });
     res.json({ merchant, store });
   }
 );

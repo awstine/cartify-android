@@ -67,6 +67,25 @@ export const ProfilePage = () => {
     }
   };
 
+  const readImageAsDataUrl = (file) =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+  const onStoreLogoUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const encoded = await readImageAsDataUrl(file);
+      setStoreForm((prev) => ({ ...prev, logoUrl: encoded }));
+    } catch (_err) {
+      showToast({ type: "error", title: "Failed to read logo image" });
+    }
+  };
+
   useEffect(() => {
     loadProfile();
   }, []);
@@ -195,6 +214,12 @@ export const ProfilePage = () => {
               <Field label="Store Logo URL" htmlFor="store-logo">
                 <Input id="store-logo" value={storeForm.logoUrl} onChange={(event) => setStoreForm((prev) => ({ ...prev, logoUrl: event.target.value }))} />
               </Field>
+              <Field label="Or Upload Store Logo" htmlFor="store-logo-upload">
+                <Input id="store-logo-upload" type="file" accept="image/*" onChange={onStoreLogoUpload} />
+              </Field>
+              {storeForm.logoUrl ? (
+                <img src={storeForm.logoUrl} alt="Store logo preview" className="h-16 w-16 rounded-full border border-slate-200 object-cover" />
+              ) : null}
               <Field label="Store Description" htmlFor="store-description">
                 <Textarea id="store-description" rows={3} value={storeForm.description} onChange={(event) => setStoreForm((prev) => ({ ...prev, description: event.target.value }))} />
               </Field>

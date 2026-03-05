@@ -25,6 +25,9 @@ interface BackendApiService {
     @GET("stores")
     suspend fun getStores(): List<BackendStore>
 
+    @GET("/api/stores")
+    suspend fun getStoresFromApiRoot(): List<BackendStore>
+
     @GET("cart")
     suspend fun getCart(@Header("Authorization") bearerToken: String): CartResponse
 

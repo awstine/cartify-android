@@ -18,6 +18,7 @@ import com.cartify.data.remote.backend.UpdateProfileRequest
 import com.cartify.data.remote.backend.UserProfileResponse
 import com.cartify.data.remote.backend.UserPreferences
 import com.cartify.data.remote.backend.WishlistResponse
+import retrofit2.HttpException
 
 /**
  * Backend repository scaffold for MongoDB-backed APIs.
@@ -57,7 +58,15 @@ class BackendRepository {
     }
 
     suspend fun getStores(): List<BackendStore> {
-        return BackendRetrofitInstance.api.getStores()
+        return try {
+            BackendRetrofitInstance.api.getStores()
+        } catch (http: HttpException) {
+            if (http.code() == 404) {
+                BackendRetrofitInstance.api.getStoresFromApiRoot()
+            } else {
+                throw http
+            }
+        }
     }
 
     suspend fun getCart(token: String): CartResponse {
