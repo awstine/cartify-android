@@ -145,6 +145,12 @@ fun LoginScreen(
                     .fillMaxWidth(),
                 textAlign = TextAlign.Center
             )
+            Spacer(modifier = Modifier.height(AuthSpacing.sm))
+            PillButton(
+                text = "Retry",
+                onClick = { viewModel.login(email.trim(), password) },
+                modifier = Modifier.fillMaxWidth()
+            )
         }
         Spacer(modifier = Modifier.height(AuthSpacing.md))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {

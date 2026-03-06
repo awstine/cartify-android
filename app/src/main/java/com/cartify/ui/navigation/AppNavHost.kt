@@ -78,8 +78,6 @@ import com.cartify.ui.screens.more.WishlistScreen
 import com.cartify.ui.screens.product.ProductDetailsScreen
 import com.cartify.ui.screens.product.ProductScreen
 import com.cartify.ui.screens.product.ProductViewModel
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -197,11 +195,6 @@ fun AppNavHost(
         return result.isSuccess
     }
 
-    LaunchedEffect(Unit) {
-        productViewModel.retryLoad()
-        loadStores()
-    }
-
     LaunchedEffect(isLoggedIn, session.token) {
         val token = session.token?.trim().orEmpty()
         if (!isLoggedIn || token.isBlank()) {
@@ -209,27 +202,16 @@ fun AppNavHost(
             return@LaunchedEffect
         }
 
-        runCatching {
-            coroutineScope {
-                val wishlistDeferred = async { backendRepository.getWishlist(token) }
-                val ordersDeferred = async { backendRepository.getOrders(token) }
-                val profileDeferred = async { backendRepository.getProfile(token) }
-                val cartDeferred = async { backendRepository.getCart(token) }
-
-                val wishlist = wishlistDeferred.await()
+        runCatching { backendRepository.getWishlist(token) }
+            .onSuccess { wishlist ->
                 wishlistProductIds = wishlist.items.map { it.productId }.toSet()
+            }
+    }
 
-                runCatching { ordersDeferred.await() }
-                runCatching { profileDeferred.await() }
-                runCatching { cartDeferred.await() }
-            }
+    LaunchedEffect(currentRoute, stores.size, storesLoading) {
+        if (currentRoute == NavigationItem.Stores.route && stores.isEmpty() && !storesLoading) {
+            loadStores()
         }
-            .onFailure {
-                runCatching { backendRepository.getWishlist(token) }
-                    .onSuccess { wishlist ->
-                        wishlistProductIds = wishlist.items.map { it.productId }.toSet()
-                    }
-            }
     }
 
     fun navigateWithPrefetch(route: String) {

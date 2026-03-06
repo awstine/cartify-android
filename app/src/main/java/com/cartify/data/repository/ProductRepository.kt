@@ -3,6 +3,7 @@ package com.cartify.data.repository
 import com.cartify.data.model.Product
 import com.cartify.data.remote.backend.BackendProduct
 import com.cartify.data.remote.backend.BackendConfig
+import com.cartify.data.remote.backend.NetworkErrorMapper
 import com.cartify.data.repository.BackendRepository
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -46,7 +47,10 @@ class ProductRepository(
                         ProductDataState.Success(lastSuccessfulProducts)
                     } else {
                         ProductDataState.Error(
-                            throwable.message ?: "Unable to load products"
+                            NetworkErrorMapper.toUserMessage(
+                                throwable = throwable,
+                                fallback = "Unable to load products"
+                            )
                         )
                     }
                 }

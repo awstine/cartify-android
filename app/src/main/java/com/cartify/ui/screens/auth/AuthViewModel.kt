@@ -6,13 +6,13 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.cartify.data.remote.backend.NetworkErrorMapper
 import com.cartify.data.repository.BackendRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import retrofit2.HttpException
 
 sealed class AuthState {
     object Idle : AuthState()
@@ -215,16 +215,13 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun errorMessage(throwable: Throwable, fallback: String): String {
-        val http = throwable as? HttpException
-        if (http != null) {
-            return when (http.code()) {
-                401 -> "Invalid credentials"
-                409 -> "Email already in use"
-                422 -> "Please check your input"
-                else -> fallback
-            }
-        }
-        return throwable.message ?: fallback
+        return NetworkErrorMapper.toUserMessage(
+            throwable = throwable,
+            fallback = fallback,
+            http401Message = "Invalid credentials",
+            http409Message = "Email already in use",
+            http422Message = "Please check your input"
+        )
     }
 }
 

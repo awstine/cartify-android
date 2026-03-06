@@ -53,6 +53,12 @@ fun AppErrorState(
     onRetry: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val title = when {
+        message.contains("no internet connection", ignoreCase = true) -> "No internet connection"
+        message.contains("timed out", ignoreCase = true) -> "Request timed out"
+        else -> "Something went wrong"
+    }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -61,7 +67,7 @@ fun AppErrorState(
         verticalArrangement = Arrangement.Center
     ) {
         Text(
-            text = "Something went wrong",
+            text = title,
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold
         )
