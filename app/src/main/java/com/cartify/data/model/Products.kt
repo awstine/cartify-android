@@ -11,13 +11,6 @@ data class Product(
     val description: String,
     val category: String,
     @SerializedName("image") val imageUrl: String,
-    val rating: ProductRating? = null,
-)
-
-@Serializable
-data class ProductRating(
-    val rate: Double = 0.0,
-    val count: Int = 0
 )
 
 @Serializable

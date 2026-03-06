@@ -1,7 +1,6 @@
 package com.cartify.ui.screens.auth
 
-import android.util.Patterns
-import androidx.compose.foundation.background
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,9 +9,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -24,34 +30,28 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import com.cartify.ui.components.BackIconButton
-import com.cartify.ui.components.DividerWithOr
-import com.cartify.ui.components.PillButton
-import com.cartify.ui.components.PillInput
-import com.cartify.ui.components.SocialAuthButton
-import com.cartify.ui.components.ToggleRow
-import com.cartify.ui.theme.AuthColors
-import com.cartify.ui.theme.AuthFont
-import com.cartify.ui.theme.AuthSpacing
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.unit.dp
 
 @Composable
 fun SignUpScreen(
     viewModel: AuthViewModel,
     onSignUpSuccess: () -> Unit,
-    onLoginClicked: () -> Unit,
-    onBack: () -> Unit = {}
+    onLoginClicked: () -> Unit
 ) {
-    var fullName by remember { mutableStateOf("") }
+    var firstName by remember { mutableStateOf("") }
+    var lastName by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    var termsAccepted by remember { mutableStateOf(false) }
-    var nameError by remember { mutableStateOf<String?>(null) }
-    var emailError by remember { mutableStateOf<String?>(null) }
-    var passwordError by remember { mutableStateOf<String?>(null) }
-    var termsError by remember { mutableStateOf<String?>(null) }
+    var confirmPassword by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
+    var confirmPasswordVisible by remember { mutableStateOf(false) }
+    var agreeToTerms by remember { mutableStateOf(false) }
+
     val authState by viewModel.authState.collectAsState()
+    val context = LocalContext.current
 
     LaunchedEffect(authState) {
         when (authState) {
@@ -59,129 +59,111 @@ fun SignUpScreen(
                 onSignUpSuccess()
                 viewModel.resetState()
             }
-            else -> Unit
+            is AuthState.Error -> {
+                Toast.makeText(context, (authState as AuthState.Error).message, Toast.LENGTH_SHORT).show()
+                viewModel.resetState()
+            }
+            else -> {}
         }
     }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(AuthColors.Background)
-            .padding(horizontal = AuthSpacing.xl, vertical = AuthSpacing.lg)
-            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.Center
     ) {
-        BackIconButton(onClick = onBack)
-        Spacer(modifier = Modifier.height(AuthSpacing.xl))
-        Text(
-            text = "Create your account",
-            fontSize = AuthFont.title,
-            fontWeight = FontWeight.ExtraBold,
-            color = AuthColors.Heading,
-            modifier = Modifier.fillMaxWidth(),
-            textAlign = TextAlign.Center
-        )
-        Spacer(modifier = Modifier.height(AuthSpacing.xs))
-        Text(
-            text = "Join Cartify for faster checkout and order tracking",
-            fontSize = AuthFont.subtitle,
-            color = AuthColors.Body,
-            modifier = Modifier.fillMaxWidth(),
-            textAlign = TextAlign.Center
-        )
-        Spacer(modifier = Modifier.height(AuthSpacing.xl))
-        Row(horizontalArrangement = Arrangement.spacedBy(AuthSpacing.sm), modifier = Modifier.fillMaxWidth()) {
-            SocialAuthButton("Google", "G", onClick = {}, modifier = Modifier.weight(1f))
-            SocialAuthButton("Apple", "A", onClick = {}, modifier = Modifier.weight(1f))
-        }
-        Spacer(modifier = Modifier.height(AuthSpacing.lg))
-        DividerWithOr()
-        Spacer(modifier = Modifier.height(AuthSpacing.lg))
-        PillInput(
-            value = fullName,
-            onValueChange = {
-                fullName = it
-                nameError = null
-            },
-            placeholder = "Full Name",
-            error = nameError
-        )
-        Spacer(modifier = Modifier.height(AuthSpacing.sm))
-        PillInput(
-            value = email,
-            onValueChange = {
-                email = it
-                emailError = null
-            },
-            placeholder = "Email Address",
-            error = emailError
-        )
-        Spacer(modifier = Modifier.height(AuthSpacing.sm))
-        PillInput(
-            value = password,
-            onValueChange = {
-                password = it
-                passwordError = null
-            },
-            placeholder = "Password",
-            isPassword = true,
-            error = passwordError
-        )
-        Spacer(modifier = Modifier.height(AuthSpacing.sm))
-        ToggleRow(
-            checked = termsAccepted,
-            onCheckedChange = {
-                termsAccepted = it
-                termsError = null
-            },
-            leftText = "I agree to Terms & Privacy Policy"
-        )
-        if (!termsError.isNullOrBlank()) {
-            Text(
-                text = termsError ?: "",
-                color = AuthColors.SoftError,
-                fontSize = AuthFont.body,
-                modifier = Modifier.padding(top = AuthSpacing.xs, start = AuthSpacing.sm)
+        Text("Sign Up", style = MaterialTheme.typography.headlineLarge)
+        Spacer(modifier = Modifier.height(16.dp))
+        Row(modifier = Modifier.fillMaxWidth()) {
+            OutlinedTextField(
+                value = firstName,
+                onValueChange = { firstName = it },
+                label = { Text("First Name") },
+                modifier = Modifier.weight(1f)
+            )
+            Spacer(modifier = Modifier.weight(0.1f))
+            OutlinedTextField(
+                value = lastName,
+                onValueChange = { lastName = it },
+                label = { Text("Last Name") },
+                modifier = Modifier.weight(1f)
             )
         }
-        Spacer(modifier = Modifier.height(AuthSpacing.lg))
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedTextField(
+            value = email,
+            onValueChange = { email = it },
+            label = { Text("Email") },
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedTextField(
+            value = password,
+            onValueChange = { password = it },
+            label = { Text("Password") },
+            modifier = Modifier.fillMaxWidth(),
+            visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+            trailingIcon = {
+                val image = if (passwordVisible)
+                    Icons.Filled.Visibility
+                else Icons.Filled.VisibilityOff
+
+                IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                    Icon(imageVector = image, contentDescription = null)
+                }
+            }
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedTextField(
+            value = confirmPassword,
+            onValueChange = { confirmPassword = it },
+            label = { Text("Confirm Password") },
+            modifier = Modifier.fillMaxWidth(),
+            visualTransformation = if (confirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+            trailingIcon = {
+                val image = if (confirmPasswordVisible)
+                    Icons.Filled.Visibility
+                else Icons.Filled.VisibilityOff
+
+                IconButton(onClick = { confirmPasswordVisible = !confirmPasswordVisible }) {
+                    Icon(imageVector = image, contentDescription = null)
+                }
+            }
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(
+                checked = agreeToTerms,
+                onCheckedChange = { agreeToTerms = it }
+            )
+            Text("I Agree with privacy and policy")
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+        
         if (authState is AuthState.Loading) {
             CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
         } else {
-            PillButton(
-                text = "Create Account",
+            Button(
                 onClick = {
-                    nameError = if (fullName.trim().length < 3) "Enter your full name" else null
-                    emailError = if (email.isBlank() || !Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
-                        "Enter a valid email address"
+                    if (agreeToTerms) {
+                        viewModel.signUp(email, password, confirmPassword)
                     } else {
-                        null
-                    }
-                    passwordError = if (password.length < 6) "Password must be at least 6 characters" else null
-                    termsError = if (!termsAccepted) "Accept terms to continue" else null
-                    if (nameError == null && emailError == null && passwordError == null && termsError == null) {
-                        viewModel.signUp(fullName.trim(), email.trim(), password, password)
+                        Toast.makeText(context, "Please agree to terms", Toast.LENGTH_SHORT).show()
                     }
                 },
                 modifier = Modifier.fillMaxWidth()
-            )
-        }
-        if (authState is AuthState.Error) {
-            Text(
-                text = (authState as AuthState.Error).message,
-                color = AuthColors.SoftError,
-                fontSize = AuthFont.body,
-                modifier = Modifier
-                    .padding(top = AuthSpacing.sm)
-                    .fillMaxWidth(),
-                textAlign = TextAlign.Center
-            )
-        }
-        Spacer(modifier = Modifier.height(AuthSpacing.md))
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-            Text("Already have an account? ", color = AuthColors.Body)
-            TextButton(onClick = onLoginClicked) {
-                Text("Sign In", color = AuthColors.Link, fontWeight = FontWeight.SemiBold)
+            ) {
+                Text("Sign up")
             }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+        TextButton(
+            onClick = onLoginClicked,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Already have an account? Log In")
         }
     }
 }

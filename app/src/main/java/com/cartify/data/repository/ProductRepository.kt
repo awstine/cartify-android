@@ -2,45 +2,29 @@ package com.cartify.data.repository
 
 import com.cartify.data.model.Product
 import com.cartify.data.remote.RetrofitInstance
-import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-sealed class ProductDataState {
-    data object Loading : ProductDataState()
-    data class Success(val products: List<Product>) : ProductDataState()
-    data class Error(val message: String) : ProductDataState()
-}
-
-class ProductRepository(
-    private val dispatcher: CoroutineDispatcher = Dispatchers.IO
-) {
+class ProductRepository {
     private val api = RetrofitInstance.api
 
-    private val _productsState = MutableStateFlow<ProductDataState>(ProductDataState.Loading)
+    private val _products = MutableStateFlow<List<Product>>(emptyList())
 
     init {
-        refreshProducts()
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                _products.value = api.getProducts()
+            } catch (e: Exception) {
+                // In a real app, you'd want to handle this error more gracefully
+                e.printStackTrace()
+            }
+        }
     }
 
-    fun getProductsState(): StateFlow<ProductDataState> = _productsState.asStateFlow()
-
-    fun refreshProducts() {
-        CoroutineScope(dispatcher).launch {
-            _productsState.value = ProductDataState.Loading
-            runCatching { api.getProducts() }
-                .onSuccess { products ->
-                    _productsState.value = ProductDataState.Success(products)
-                }
-                .onFailure { throwable ->
-                    _productsState.value = ProductDataState.Error(
-                        throwable.message ?: "Unable to load products"
-                    )
-                }
-        }
+    fun getProducts(): StateFlow<List<Product>> {
+        return _products
     }
 }
