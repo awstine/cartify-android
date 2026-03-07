@@ -86,6 +86,7 @@ fun AppNavHost(
     productViewModel: ProductViewModel,
     cartViewModel: CartViewModel,
     appPreferences: AppPreferences,
+    prefetchedStores: List<BackendStore> = emptyList(),
     darkModeEnabled: Boolean,
     onDarkModeChanged: (Boolean) -> Unit
 ) {
@@ -108,7 +109,7 @@ fun AppNavHost(
     val recentlyViewedIds by commerceRepository.recentlyViewed.collectAsState()
     val moderationState by commerceRepository.moderationState.collectAsState()
     var wishlistProductIds by remember { mutableStateOf(setOf<String>()) }
-    var stores by remember { mutableStateOf<List<BackendStore>>(emptyList()) }
+    var stores by remember(prefetchedStores) { mutableStateOf(prefetchedStores) }
     var storesLoading by remember { mutableStateOf(false) }
     var storesError by remember { mutableStateOf<String?>(null) }
     var currentStoreSlug by remember { mutableStateOf<String?>(null) }

@@ -8,10 +8,13 @@ import com.cartify.data.repository.BackendRepository
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 sealed class ProductDataState {
     data object Loading : ProductDataState()
@@ -24,6 +27,8 @@ class ProductRepository(
 ) {
     private val backendRepository = BackendRepository()
     private var lastSuccessfulProducts: List<Product> = emptyList()
+    private val repositoryScope = CoroutineScope(dispatcher)
+    private var refreshJob: Job? = null
 
     private val _productsState = MutableStateFlow<ProductDataState>(ProductDataState.Loading)
 
@@ -34,7 +39,8 @@ class ProductRepository(
     fun getProductsState(): StateFlow<ProductDataState> = _productsState.asStateFlow()
 
     fun refreshProducts() {
-        CoroutineScope(dispatcher).launch {
+        refreshJob?.cancel()
+        refreshJob = repositoryScope.launch {
             _productsState.value = ProductDataState.Loading
             runCatching { backendRepository.getProducts() }
                 .onSuccess { products ->
@@ -55,6 +61,14 @@ class ProductRepository(
                     }
                 }
         }
+    }
+
+    suspend fun awaitInitialLoad(timeoutMs: Long = 12_000L): Boolean {
+        if (_productsState.value !is ProductDataState.Loading) return true
+        val loaded = withTimeoutOrNull(timeoutMs) {
+            _productsState.first { it !is ProductDataState.Loading }
+        }
+        return loaded != null
     }
 }
 

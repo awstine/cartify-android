@@ -109,12 +109,36 @@ fun ProductScreen(
     var showGuestSheet by remember { mutableStateOf(false) }
     val hasOverride = productsOverride != null
     val baseProducts = productsOverride ?: uiState.products
-    val scopedProducts = remember(baseProducts, uiState.searchQuery, uiState.selectedCategory, uiState.selectedSort, hasOverride) {
+    val homeCategories = remember(hasOverride, baseProducts, uiState.products.size) {
+        if (!hasOverride) {
+            viewModel.allCategories()
+        } else {
+            val base = baseProducts
+                .map { it.category.trim() }
+                .filter { it.isNotBlank() }
+                .distinctBy { it.lowercase(Locale.getDefault()) }
+                .sortedBy { it.lowercase(Locale.getDefault()) }
+            listOf("All") + base
+        }
+    }
+    val effectiveSelectedCategory = remember(hasOverride, uiState.selectedCategory, homeCategories) {
+        if (hasOverride && homeCategories.none { it.equals(uiState.selectedCategory, ignoreCase = true) }) {
+            "All"
+        } else {
+            uiState.selectedCategory
+        }
+    }
+    LaunchedEffect(hasOverride, uiState.selectedCategory, effectiveSelectedCategory) {
+        if (hasOverride && effectiveSelectedCategory != uiState.selectedCategory) {
+            viewModel.onCategorySelected(effectiveSelectedCategory)
+        }
+    }
+    val scopedProducts = remember(baseProducts, uiState.searchQuery, effectiveSelectedCategory, uiState.selectedSort, hasOverride) {
         if (!hasOverride) {
             baseProducts
         } else {
             val filtered = baseProducts
-                .filter { uiState.selectedCategory == "All" || it.category.equals(uiState.selectedCategory, true) }
+                .filter { effectiveSelectedCategory == "All" || it.category.equals(effectiveSelectedCategory, true) }
                 .filter {
                     uiState.searchQuery.isBlank() ||
                         it.title.contains(uiState.searchQuery, ignoreCase = true) ||
@@ -126,18 +150,6 @@ fun ProductScreen(
                 ProductSortOption.PriceLowToHigh -> filtered.sortedBy { it.price }
                 ProductSortOption.PriceHighToLow -> filtered.sortedByDescending { it.price }
             }
-        }
-    }
-    val homeCategories = remember(hasOverride, scopedProducts, uiState.products.size) {
-        if (!hasOverride) {
-            viewModel.allCategories()
-        } else {
-            val base = scopedProducts
-                .map { it.category.trim() }
-                .filter { it.isNotBlank() }
-                .distinctBy { it.lowercase(Locale.getDefault()) }
-                .sortedBy { it.lowercase(Locale.getDefault()) }
-            listOf("All") + base
         }
     }
     var inStockOnly by remember { mutableStateOf(false) }
@@ -152,7 +164,7 @@ fun ProductScreen(
         }
     }
     val selectedCategoryIndex = homeCategories.indexOfFirst {
-        it.equals(uiState.selectedCategory, ignoreCase = true)
+        it.equals(effectiveSelectedCategory, ignoreCase = true)
     }
     val heroDisplayProducts = displayProducts.take(if (lowDataMode) 4 else 8)
     val heroListState = rememberLazyListState()
@@ -160,7 +172,7 @@ fun ProductScreen(
     val productFeedListState = rememberLazyListState()
     var visibleCount by remember(
         uiState.searchQuery,
-        uiState.selectedCategory,
+        effectiveSelectedCategory,
         uiState.selectedSort,
         displayProducts.size
     ) { mutableStateOf(12) }
@@ -384,7 +396,7 @@ fun ProductScreen(
                                 items(homeCategories) { category ->
                                     CategoryPill(
                                         text = categoryLabel(category),
-                                        selected = uiState.selectedCategory.equals(category, true),
+                                        selected = effectiveSelectedCategory.equals(category, true),
                                         onClick = {
                                             val tappedIndex = homeCategories.indexOfFirst { it.equals(category, ignoreCase = true) }
                                             if (tappedIndex >= 0 && selectedCategoryIndex >= 0) {
@@ -450,7 +462,7 @@ fun ProductScreen(
                         item {
                             if (featureFlags.smoothCategoryAnimationEnabled) {
                                 AnimatedContent(
-                                    targetState = uiState.selectedCategory,
+                                    targetState = effectiveSelectedCategory,
                                     transitionSpec = {
                                         if (categorySwipeDirection >= 0) {
                                             (slideInHorizontally { width -> width / 3 } + fadeIn()) togetherWith
@@ -466,7 +478,7 @@ fun ProductScreen(
                                         displayProducts = displayProducts,
                                         visibleProducts = visibleProducts,
                                         visibleCount = visibleCount,
-                                        selectedCategory = uiState.selectedCategory,
+                                        selectedCategory = effectiveSelectedCategory,
                                         onProductClick = onProductClick,
                                         onLoadMore = { visibleCount = min(visibleCount + 10, displayProducts.size) }
                                     )
@@ -476,7 +488,7 @@ fun ProductScreen(
                                     displayProducts = displayProducts,
                                     visibleProducts = visibleProducts,
                                     visibleCount = visibleCount,
-                                    selectedCategory = uiState.selectedCategory,
+                                    selectedCategory = effectiveSelectedCategory,
                                     onProductClick = onProductClick,
                                     onLoadMore = { visibleCount = min(visibleCount + 10, displayProducts.size) }
                                 )
