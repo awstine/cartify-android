@@ -109,6 +109,7 @@ private fun BackendProduct.toUiProduct(
         storeId = storeId?.trim().orEmpty(),
         storeSlug = storeSlug?.trim().orEmpty().ifBlank { sourceStoreSlug?.trim().orEmpty() },
         sizes = resolvedSizes(),
+        colors = resolvedColors(),
         stock = resolvedStock()
     )
 }
@@ -154,4 +155,17 @@ private fun BackendProduct.resolvedSizes(): List<String> {
         .filter { it.isNotBlank() }
 
     return (directSizes + variantSizes).distinct()
+}
+
+private fun BackendProduct.resolvedColors(): List<String> {
+    val directColors = colors.orEmpty()
+        .map { it.trim().uppercase() }
+        .filter { it.matches(Regex("^#[0-9A-F]{6}$")) }
+
+    val variantColors = variants.orEmpty()
+        .mapNotNull { it.color }
+        .map { it.trim().uppercase() }
+        .filter { it.matches(Regex("^#[0-9A-F]{6}$")) }
+
+    return (directColors + variantColors).distinct()
 }

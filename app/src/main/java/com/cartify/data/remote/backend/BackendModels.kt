@@ -35,6 +35,7 @@ data class BackendProduct(
     @SerializedName("storeId") val storeId: String? = null,
     val storeSlug: String? = null,
     val sizes: List<String>? = null,
+    val colors: List<String>? = null,
     val variants: List<BackendVariant>? = null,
     val price: Double,
     val stock: Int? = null,
@@ -44,7 +45,8 @@ data class BackendProduct(
 )
 
 data class BackendVariant(
-    val size: String? = null
+    val size: String? = null,
+    val color: String? = null
 )
 
 data class BackendCartItem(

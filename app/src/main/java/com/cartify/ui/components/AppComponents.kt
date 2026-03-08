@@ -128,12 +128,13 @@ fun CircularIconButton(
 @Composable
 fun SoftCard(
     modifier: Modifier = Modifier,
+    containerColor: Color = SoftCardColor,
     content: @Composable () -> Unit
 ) {
     Card(
         modifier = modifier.animateContentSize(),
         shape = RoundedCornerShape(AppRadius.md),
-        colors = CardDefaults.cardColors(containerColor = SoftCardColor),
+        colors = CardDefaults.cardColors(containerColor = containerColor),
         elevation = CardDefaults.cardElevation(defaultElevation = AppElevation.card)
     ) {
         content()

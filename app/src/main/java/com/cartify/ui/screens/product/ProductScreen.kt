@@ -56,6 +56,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -258,11 +259,10 @@ fun ProductScreen(
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                         contentPadding = PaddingValues(bottom = 72.dp)
                     ) {
-                        stickyHeader {
+                        item {
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .background(MaterialTheme.colorScheme.background)
                                     .padding(horizontal = 12.dp, vertical = 6.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
@@ -386,11 +386,13 @@ fun ProductScreen(
                             }
                         }
 
-                        item {
+                        stickyHeader {
                             LazyRow(
                                 state = categoryListState,
-                                modifier = Modifier.fillMaxWidth(),
-                                contentPadding = PaddingValues(horizontal = 12.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(MaterialTheme.colorScheme.background),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 items(homeCategories) { category ->
@@ -571,13 +573,20 @@ private fun LoadingState() {
 
 @Composable
 private fun HeroProductCard(product: Product, onProductClick: () -> Unit) {
+    val productColor = product.primaryColorOrNull()
+    val productColorName = product.primaryColorName()
+    val accentColor = productColor ?: MaterialTheme.colorScheme.primary
+    val cardColor = productColor?.copy(alpha = 0.10f) ?: MaterialTheme.colorScheme.surface
+    val mediaBgColor = productColor?.copy(alpha = 0.20f)
+        ?: MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+
     Card(
         modifier = Modifier
             .width(304.dp)
             .clickable(onClick = onProductClick),
         shape = RoundedCornerShape(1.5.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        colors = CardDefaults.cardColors(containerColor = cardColor)
     ) {
         Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             ProductImage(
@@ -587,19 +596,29 @@ private fun HeroProductCard(product: Product, onProductClick: () -> Unit) {
                 modifier = Modifier
                     .size(128.dp)
                     .clip(RoundedCornerShape(1.5.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                    .background(mediaBgColor)
             )
             Spacer(modifier = Modifier.size(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(product.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Spacer(modifier = Modifier.height(6.dp))
+                if (!productColorName.isNullOrBlank()) {
+                    Text(
+                        "Color: $productColorName",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                }
                 Text(
                     stockUrgencyLabel(product.stock),
                     style = MaterialTheme.typography.labelMedium,
                     color = when {
                         product.stock <= 0 -> MaterialTheme.colorScheme.error
                         product.stock <= 5 -> MaterialTheme.colorScheme.tertiary
-                        else -> MaterialTheme.colorScheme.primary
+                        else -> accentColor
                     },
                     fontWeight = FontWeight.SemiBold
                 )
@@ -614,7 +633,7 @@ private fun HeroProductCard(product: Product, onProductClick: () -> Unit) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     "KSh ${"%.2f".format(product.price)}",
-                    color = MaterialTheme.colorScheme.primary,
+                    color = accentColor,
                     fontWeight = FontWeight.Bold,
                     style = MaterialTheme.typography.titleSmall
                 )
@@ -629,11 +648,19 @@ private fun HomeProductCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val productColor = product.primaryColorOrNull()
+    val productColorName = product.primaryColorName()
+    val accentColor = productColor ?: MaterialTheme.colorScheme.primary
+    val cardColor = productColor?.copy(alpha = 0.10f) ?: MaterialTheme.colorScheme.surface
+    val mediaBgColor = productColor?.copy(alpha = 0.20f)
+        ?: MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+
     SoftCard(
         modifier = modifier
             .defaultMinSize(minHeight = 250.dp)
             .clip(RoundedCornerShape(AppRadius.md))
-            .clickable(onClick = onClick)
+            .clickable(onClick = onClick),
+        containerColor = cardColor
     ) {
         Column(modifier = Modifier.padding(8.dp)) {
             ProductImage(
@@ -644,7 +671,7 @@ private fun HomeProductCard(
                     .fillMaxWidth()
                     .height(118.dp)
                     .clip(RoundedCornerShape(AppRadius.md))
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                    .background(mediaBgColor)
             )
             Spacer(modifier = Modifier.height(6.dp))
             Text(product.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
@@ -655,12 +682,21 @@ private fun HomeProductCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+            if (!productColorName.isNullOrBlank()) {
+                Text(
+                    "Color: $productColorName",
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
             Text(
                 stockUrgencyLabel(product.stock),
                 color = when {
                     product.stock <= 0 -> MaterialTheme.colorScheme.error
                     product.stock <= 5 -> MaterialTheme.colorScheme.tertiary
-                    else -> MaterialTheme.colorScheme.primary
+                    else -> accentColor
                 },
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.SemiBold
@@ -685,7 +721,7 @@ private fun HomeProductCard(
                     Icon(
                         imageVector = if (index < filledStars) Icons.Default.Star else Icons.Default.StarBorder,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
+                        tint = accentColor,
                         modifier = Modifier.size(14.dp)
                     )
                 }
@@ -696,9 +732,45 @@ private fun HomeProductCard(
                     color = TextSecondary
                 )
             }
-            Text("KSh ${"%.2f".format(product.price)}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+            Text("KSh ${"%.2f".format(product.price)}", color = accentColor, fontWeight = FontWeight.Bold)
         }
     }
+}
+
+private fun Product.primaryColorOrNull(): Color? = colors.firstNotNullOfOrNull(::hexToComposeColorOrNull)
+
+private fun Product.primaryColorName(): String? = colors.firstNotNullOfOrNull(::colorNameFromHexOrNull)
+
+private fun hexToComposeColorOrNull(hex: String): Color? {
+    return runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrNull()
+}
+
+private fun colorNameFromHexOrNull(hex: String): String? {
+    val normalized = hex.trim().uppercase()
+    if (!normalized.matches(Regex("^#[0-9A-F]{6}$"))) return null
+    return runCatching {
+        val hsv = FloatArray(3)
+        android.graphics.Color.colorToHSV(android.graphics.Color.parseColor(normalized), hsv)
+        val hue = hsv[0]
+        val sat = hsv[1]
+        val value = hsv[2]
+
+        if (value < 0.12f) return@runCatching "Black"
+        if (sat < 0.12f && value > 0.88f) return@runCatching "White"
+        if (sat < 0.18f) return@runCatching "Gray"
+
+        when {
+            hue < 15f -> "Red"
+            hue < 45f -> "Orange"
+            hue < 65f -> "Yellow"
+            hue < 170f -> "Green"
+            hue < 200f -> "Cyan"
+            hue < 250f -> "Blue"
+            hue < 290f -> "Purple"
+            hue < 345f -> "Pink"
+            else -> "Red"
+        }
+    }.getOrNull()
 }
 
 private fun categoryLabel(raw: String): String {

@@ -1,10 +1,27 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Button } from "./ui/Button";
 import { Field, Input, Select, Textarea } from "./ui/Field";
 import { Modal } from "./ui/Modal";
+
+const COLOR_OPTIONS = [
+  { name: "Black", hex: "#000000" },
+  { name: "White", hex: "#FFFFFF" },
+  { name: "Red", hex: "#EF4444" },
+  { name: "Blue", hex: "#3B82F6" },
+  { name: "Green", hex: "#22C55E" },
+  { name: "Yellow", hex: "#FACC15" },
+  { name: "Orange", hex: "#F97316" },
+  { name: "Purple", hex: "#8B5CF6" },
+  { name: "Pink", hex: "#EC4899" },
+  { name: "Brown", hex: "#92400E" },
+  { name: "Gray", hex: "#6B7280" },
+  { name: "Navy", hex: "#1E3A8A" },
+];
+
+const getColorName = (hex) => COLOR_OPTIONS.find((item) => item.hex.toUpperCase() === String(hex || "").toUpperCase())?.name || "Custom Color";
 
 const schema = z.object({
   title: z.string().min(2, "Name must be at least 2 characters"),
@@ -32,6 +49,8 @@ const schema = z.object({
     .optional(),
   hasSizes: z.boolean().optional(),
   sizesText: z.string().optional(),
+  hasColors: z.boolean().optional(),
+  colors: z.array(z.string().regex(/^#[0-9A-Fa-f]{6}$/, "Invalid color value")).max(20).optional(),
   variantsJson: z.string().optional(),
 }).superRefine((values, ctx) => {
   if (!values.hasSizes) return;
@@ -44,6 +63,13 @@ const schema = z.object({
       code: z.ZodIssueCode.custom,
       path: ["sizesText"],
       message: "Add at least one size",
+    });
+  }
+  if (values.hasColors && (!Array.isArray(values.colors) || values.colors.length === 0)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["colors"],
+      message: "Add at least one color",
     });
   }
 });
@@ -71,12 +97,16 @@ export const ProductModal = ({ isOpen, onClose, onSubmit, initialValues, loading
       images: [],
       hasSizes: false,
       sizesText: "",
+      hasColors: false,
+      colors: [],
       variantsJson: "[]",
     },
   });
+  const [colorInputValue, setColorInputValue] = useState(COLOR_OPTIONS[0].hex);
 
   useEffect(() => {
     register("images");
+    register("colors");
   }, [register]);
 
   useEffect(() => {
@@ -97,13 +127,18 @@ export const ProductModal = ({ isOpen, onClose, onSubmit, initialValues, loading
           : [],
       hasSizes: Array.isArray(initialValues?.sizes) && initialValues.sizes.length > 0,
       sizesText: Array.isArray(initialValues?.sizes) ? initialValues.sizes.join(", ") : "",
+      hasColors: Array.isArray(initialValues?.colors) && initialValues.colors.length > 0,
+      colors: Array.isArray(initialValues?.colors) ? initialValues.colors.filter(Boolean).slice(0, 20) : [],
       variantsJson: JSON.stringify(Array.isArray(initialValues?.variants) ? initialValues.variants : [], null, 2),
     });
+    setColorInputValue(COLOR_OPTIONS[0].hex);
   }, [initialValues, reset, isOpen]);
 
   const imageUrlValue = watch("imageUrl");
   const imagesValue = watch("images") || [];
   const hasSizesValue = Boolean(watch("hasSizes"));
+  const hasColorsValue = Boolean(watch("hasColors"));
+  const colorsValue = watch("colors") || [];
 
   const handleImageFileChange = (event) => {
     const files = Array.from(event.target.files || []).slice(0, 4);
@@ -128,6 +163,17 @@ export const ProductModal = ({ isOpen, onClose, onSubmit, initialValues, loading
     const updated = imagesValue.filter((_, i) => i !== index);
     setValue("images", updated, { shouldDirty: true, shouldValidate: true });
     setValue("imageUrl", updated[0] || "", { shouldDirty: true, shouldValidate: true });
+  };
+
+  const addColor = () => {
+    const normalized = String(colorInputValue || "").trim().toUpperCase();
+    if (!/^#[0-9A-F]{6}$/.test(normalized) || colorsValue.includes(normalized) || colorsValue.length >= 20) return;
+    setValue("colors", [...colorsValue, normalized], { shouldDirty: true, shouldValidate: true });
+  };
+
+  const removeColor = (index) => {
+    const updated = colorsValue.filter((_, i) => i !== index);
+    setValue("colors", updated, { shouldDirty: true, shouldValidate: true });
   };
 
   return (
@@ -186,6 +232,52 @@ export const ProductModal = ({ isOpen, onClose, onSubmit, initialValues, loading
               >
                 <Input id="sizesText" placeholder="S, M, L, XL" {...register("sizesText")} />
               </Field>
+            </div>
+          ) : null}
+        </div>
+        <div className="md:col-span-2 rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+          <label htmlFor="hasColors" className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-800 dark:text-slate-100">
+            <input id="hasColors" type="checkbox" {...register("hasColors")} />
+            This product has colors
+          </label>
+          {hasColorsValue ? (
+            <div className="mt-3 space-y-3">
+              <Field label="Add Color" htmlFor="color-input" error={errors.colors?.message}>
+                <div className="flex items-center gap-2">
+                  <Select
+                    id="color-input"
+                    value={colorInputValue}
+                    onChange={(event) => setColorInputValue(event.target.value)}
+                    className="w-44"
+                  >
+                    {COLOR_OPTIONS.map((option) => (
+                      <option key={option.hex} value={option.hex}>
+                        {option.name}
+                      </option>
+                    ))}
+                  </Select>
+                  <span className="h-6 w-6 rounded-full border border-slate-300" style={{ backgroundColor: colorInputValue }} />
+                  <Button type="button" variant="secondary" onClick={addColor}>
+                    Add
+                  </Button>
+                </div>
+              </Field>
+              {colorsValue.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {colorsValue.map((hex, index) => (
+                    <button
+                      key={`${hex}-${index}`}
+                      type="button"
+                      onClick={() => removeColor(index)}
+                      className="flex items-center gap-2 px-2 py-1 text-xs text-slate-700 dark:text-slate-200"
+                      title="Click to remove"
+                    >
+                      <span className="h-4 w-4 rounded-full border border-slate-300 dark:border-slate-700" style={{ backgroundColor: hex }} />
+                      {getColorName(hex)}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>

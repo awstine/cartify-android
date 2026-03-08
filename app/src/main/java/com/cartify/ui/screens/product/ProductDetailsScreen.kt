@@ -1,7 +1,6 @@
 package com.cartify.ui.screens.product
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
@@ -99,6 +98,12 @@ fun ProductDetailsScreen(
     }
 
     var selectedColor by remember { mutableStateOf(0) }
+    val availableColors = remember(product.colors) {
+        product.colors
+            .map { it.trim().uppercase() }
+            .filter { it.matches(Regex("^#[0-9A-F]{6}$")) }
+            .distinct()
+    }
     val availableSizes = remember(product.sizes) {
         product.sizes
             .map { it.trim() }
@@ -122,12 +127,9 @@ fun ProductDetailsScreen(
     val galleryState = rememberLazyListState()
     val galleryScope = rememberCoroutineScope()
     val inStock = product.stock > 0
-    val selectedColorLabel = when (selectedColor) {
-        0 -> "Blue"
-        1 -> "Black"
-        else -> "White"
-    }
-    val variantStock = remember(product.stock, selectedSize, selectedColorLabel) {
+    val selectedColorHex = availableColors.getOrNull(selectedColor).orEmpty()
+    val selectedColorLabel = colorNameFromHex(selectedColorHex) ?: "Default"
+    val variantStock = remember(product.stock, selectedSize, selectedColor, availableColors) {
         calculateVariantStock(
             totalStock = product.stock,
             selectedSizeIndex = availableSizes.indexOf(selectedSize).coerceAtLeast(0),
@@ -153,6 +155,9 @@ fun ProductDetailsScreen(
     LaunchedEffect(galleryImages, relatedProducts) {
         val relatedUrls = relatedProducts.flatMap { it.imageUrls + listOf(it.imageUrl) }
         prefetchImageUrls(context, galleryImages + relatedUrls)
+    }
+    LaunchedEffect(availableColors) {
+        if (selectedColor > availableColors.lastIndex) selectedColor = 0
     }
 
     Box(
@@ -243,16 +248,7 @@ fun ProductDetailsScreen(
                                 contentDescription = "Thumbnail ${index + 1}",
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier
-                                    .size(62.dp)
-                                    .border(
-                                        width = if (selectedImageIndex == index) 2.dp else 1.dp,
-                                        color = if (selectedImageIndex == index) {
-                                            MaterialTheme.colorScheme.primary
-                                        } else {
-                                            MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)
-                                        },
-                                        shape = RoundedCornerShape(10.dp)
-                                    )
+                                    .size(if (selectedImageIndex == index) 64.dp else 62.dp)
                                     .clip(RoundedCornerShape(10.dp))
                                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
                                     .clickable {
@@ -375,24 +371,21 @@ fun ProductDetailsScreen(
                     }
                 }
 
-                Text("Color", fontWeight = FontWeight.SemiBold)
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    listOf(Color(0xFF4D5BCE), Color(0xFF161616), Color(0xFFFFFFFF)).forEachIndexed { index, swatch ->
-                        androidx.compose.foundation.layout.Box(
-                            modifier = Modifier
-                                .size(if (selectedColor == index) 32.dp else 28.dp)
-                                .clip(CircleShape)
-                                .background(swatch)
-                                .background(
-                                    if (selectedColor == index) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else Color.Transparent,
-                                    CircleShape
-                                )
-                                .padding(2.dp)
-                                .clip(CircleShape)
-                                .background(swatch)
-                                .clickable { selectedColor = index }
-                        )
+                if (availableColors.isNotEmpty()) {
+                    Text("Color", fontWeight = FontWeight.SemiBold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        availableColors.forEachIndexed { index, hex ->
+                            val swatch = hexToComposeColor(hex)
+                            androidx.compose.foundation.layout.Box(
+                                modifier = Modifier
+                                    .size(if (selectedColor == index) 32.dp else 28.dp)
+                                    .clip(CircleShape)
+                                    .background(swatch)
+                                    .clickable { selectedColor = index }
+                            )
+                        }
                     }
+                    Text("Selected: $selectedColorLabel", style = MaterialTheme.typography.bodySmall, color = TextSecondary)
                 }
 
                 if (availableSizes.isNotEmpty()) {
@@ -565,4 +558,37 @@ private fun calculateVariantStock(
     val variance = ((selectedSizeIndex + 1) * 3) + ((selectedColorIndex + 1) * 2)
     val reserved = variance % 5
     return (totalStock - reserved).coerceAtLeast(0)
+}
+
+private fun hexToComposeColor(hex: String): Color {
+    return runCatching { Color(android.graphics.Color.parseColor(hex)) }
+        .getOrDefault(Color.Gray)
+}
+
+private fun colorNameFromHex(hex: String): String? {
+    val normalized = hex.trim().uppercase()
+    if (!normalized.matches(Regex("^#[0-9A-F]{6}$"))) return null
+    return runCatching {
+        val hsv = FloatArray(3)
+        android.graphics.Color.colorToHSV(android.graphics.Color.parseColor(normalized), hsv)
+        val hue = hsv[0]
+        val sat = hsv[1]
+        val value = hsv[2]
+
+        if (value < 0.12f) return@runCatching "Black"
+        if (sat < 0.12f && value > 0.88f) return@runCatching "White"
+        if (sat < 0.18f) return@runCatching "Gray"
+
+        when {
+            hue < 15f -> "Red"
+            hue < 45f -> "Orange"
+            hue < 65f -> "Yellow"
+            hue < 170f -> "Green"
+            hue < 200f -> "Cyan"
+            hue < 250f -> "Blue"
+            hue < 290f -> "Purple"
+            hue < 345f -> "Pink"
+            else -> "Red"
+        }
+    }.getOrNull()
 }

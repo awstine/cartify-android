@@ -355,6 +355,8 @@ router.post(
     body("status").optional().isString().isIn(["active", "draft"]),
     body("sizes").optional().isArray({ max: 30 }),
     body("sizes.*").optional().isString().trim().isLength({ min: 1, max: 20 }),
+    body("colors").optional().isArray({ max: 20 }),
+    body("colors.*").optional().isString().matches(/^#[0-9A-Fa-f]{6}$/),
     body("variants").optional().isArray(),
     body("variants.*.sku").optional().isString(),
     body("variants.*.size").optional().isString(),
@@ -379,6 +381,15 @@ router.post(
     const sizes = Array.isArray(req.body.sizes)
       ? req.body.sizes.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 30)
       : [];
+    const colors = Array.isArray(req.body.colors)
+      ? Array.from(
+          new Set(
+            req.body.colors
+              .map((item) => String(item || "").trim().toUpperCase())
+              .filter((item) => /^#[0-9A-F]{6}$/.test(item))
+          )
+        ).slice(0, 20)
+      : [];
     const imageUrl = req.body.imageUrl || images[0] || "";
 
     const product = await Product.create({
@@ -393,6 +404,7 @@ router.post(
       stockQty: Number(req.body.stockQty || 0),
       status: req.body.status || "active",
       sizes,
+      colors,
       variants: Array.isArray(req.body.variants) ? req.body.variants : [],
       price: Number(req.body.price),
     });
@@ -423,6 +435,8 @@ router.put(
     body("status").optional().isString().isIn(["active", "draft"]),
     body("sizes").optional().isArray({ max: 30 }),
     body("sizes.*").optional().isString().trim().isLength({ min: 1, max: 20 }),
+    body("colors").optional().isArray({ max: 20 }),
+    body("colors.*").optional().isString().matches(/^#[0-9A-Fa-f]{6}$/),
     body("variants").optional().isArray(),
     body("variants.*.sku").optional().isString(),
     body("variants.*.size").optional().isString(),
@@ -455,6 +469,7 @@ router.put(
       stockQty,
       status,
       sizes,
+      colors,
       variants,
     } =
       req.body;
@@ -482,6 +497,15 @@ router.put(
     if (typeof status === "string") updates.status = status;
     if (Array.isArray(sizes)) {
       updates.sizes = sizes.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 30);
+    }
+    if (Array.isArray(colors)) {
+      updates.colors = Array.from(
+        new Set(
+          colors
+            .map((item) => String(item || "").trim().toUpperCase())
+            .filter((item) => /^#[0-9A-F]{6}$/.test(item))
+        )
+      ).slice(0, 20);
     }
     if (Array.isArray(variants)) updates.variants = variants;
 

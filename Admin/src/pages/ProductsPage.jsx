@@ -21,6 +21,16 @@ const parseSizes = (sizesText) =>
     .map((item) => item.trim())
     .filter(Boolean);
 
+const normalizeHexColors = (colors) => {
+  if (!Array.isArray(colors)) return [];
+  const unique = new Set();
+  colors.forEach((color) => {
+    const normalized = String(color || "").trim().toUpperCase();
+    if (/^#[0-9A-F]{6}$/.test(normalized)) unique.add(normalized);
+  });
+  return Array.from(unique).slice(0, 20);
+};
+
 export const ProductsPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { showToast } = useToast();
@@ -134,10 +144,16 @@ export const ProductsPage = () => {
       imageUrl: values.imageUrl || "",
       images: Array.isArray(values.images) ? values.images.slice(0, 4) : values.imageUrl ? [values.imageUrl] : [],
       sizes: values.hasSizes ? parseSizes(values.sizesText).slice(0, 30) : [],
+      colors: values.hasColors ? normalizeHexColors(values.colors) : [],
       variants,
     };
     if (values.hasSizes && payload.sizes.length === 0) {
       showToast({ type: "error", title: "Add at least one size" });
+      setSubmitting(false);
+      return;
+    }
+    if (values.hasColors && payload.colors.length === 0) {
+      showToast({ type: "error", title: "Add at least one color" });
       setSubmitting(false);
       return;
     }

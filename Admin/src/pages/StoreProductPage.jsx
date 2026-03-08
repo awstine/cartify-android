@@ -9,6 +9,21 @@ import { useToast } from "../context/ToastContext";
 import { withStoreQuery } from "../storeMode";
 
 const formatMoney = (value) => new Intl.NumberFormat("en-KE", { style: "currency", currency: "KES" }).format(Number(value || 0));
+const COLOR_NAME_BY_HEX = {
+  "#000000": "Black",
+  "#FFFFFF": "White",
+  "#EF4444": "Red",
+  "#3B82F6": "Blue",
+  "#22C55E": "Green",
+  "#FACC15": "Yellow",
+  "#F97316": "Orange",
+  "#8B5CF6": "Purple",
+  "#EC4899": "Pink",
+  "#92400E": "Brown",
+  "#6B7280": "Gray",
+  "#1E3A8A": "Navy",
+};
+const getColorName = (hex) => COLOR_NAME_BY_HEX[String(hex || "").toUpperCase()] || "Custom Color";
 
 export const StoreProductPage = () => {
   const { id } = useParams();
@@ -213,6 +228,22 @@ export const StoreProductPage = () => {
           {isOut ? "Out of stock" : `Stock available: ${Number(product.stockQty || 0)}`}
         </p>
         <p className="mt-4 text-sm text-slate-700">{product.description || "No description provided."}</p>
+        {Array.isArray(product.colors) && product.colors.length > 0 ? (
+          <div className="mt-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Colors</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {product.colors.map((hex, index) => (
+                <div
+                  key={`${hex}-${index}`}
+                  className="flex items-center gap-2 px-2 py-1 text-xs text-slate-700"
+                >
+                  <span className="h-4 w-4 rounded-full border border-slate-300" style={{ backgroundColor: hex }} />
+                  {getColorName(hex)}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
         <div className="mt-4 flex items-center gap-2 text-sm">
           <span className="rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-700">{avgRating.toFixed(1)} / 5</span>
           <span className="text-slate-500">({(product.reviews || []).length} review(s))</span>

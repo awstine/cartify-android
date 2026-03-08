@@ -38,6 +38,14 @@ const productSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    colors: {
+      type: [String],
+      default: [],
+      validate: {
+        validator: (value) => Array.isArray(value) && value.length <= 20 && value.every((item) => /^#[0-9A-Fa-f]{6}$/.test(String(item || ""))),
+        message: "Colors must be hex values like #FF0000 (max 20)",
+      },
+    },
     reviews: {
       type: [
         new mongoose.Schema(

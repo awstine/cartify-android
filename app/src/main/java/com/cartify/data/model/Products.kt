@@ -16,6 +16,7 @@ data class Product(
     val storeId: String = "",
     val storeSlug: String = "",
     val sizes: List<String> = emptyList(),
+    val colors: List<String> = emptyList(),
     val stock: Int = 0,
     val rating: ProductRating? = null,
 )
