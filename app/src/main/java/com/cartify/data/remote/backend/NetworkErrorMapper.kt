@@ -8,8 +8,8 @@ import java.net.UnknownHostException
 import retrofit2.HttpException
 
 object NetworkErrorMapper {
-    private const val NO_INTERNET_MESSAGE = "No internet connection. Check your connection and try again."
-    private const val TIMEOUT_MESSAGE = "Request timed out. Please tap Retry."
+    private const val NO_INTERNET_MESSAGE = "Cannot reach backend. Verify internet or local API host (10.0.2.2 for emulator, LAN IP for physical device)."
+    private const val TIMEOUT_MESSAGE = "Request timed out. Ensure backend is running, then retry."
 
     fun toUserMessage(
         throwable: Throwable,
@@ -31,13 +31,22 @@ object NetworkErrorMapper {
         val root = rootCause(throwable)
         return when {
             root is SocketTimeoutException -> TIMEOUT_MESSAGE
-            root is UnknownHostException -> NO_INTERNET_MESSAGE
-            root is NoRouteToHostException -> NO_INTERNET_MESSAGE
-            root is ConnectException -> NO_INTERNET_MESSAGE
-            root is IOException && root.message?.contains("unable to resolve host", ignoreCase = true) == true -> NO_INTERNET_MESSAGE
-            root is IOException && root.message?.contains("failed to connect", ignoreCase = true) == true -> NO_INTERNET_MESSAGE
+            isReachabilityRoot(root) -> NO_INTERNET_MESSAGE
             else -> throwable.message ?: fallback
         }
+    }
+
+    fun isReachabilityFailure(throwable: Throwable): Boolean {
+        val root = rootCause(throwable)
+        return isReachabilityRoot(root)
+    }
+
+    private fun isReachabilityRoot(root: Throwable): Boolean {
+        return root is UnknownHostException ||
+            root is NoRouteToHostException ||
+            root is ConnectException ||
+            (root is IOException && root.message?.contains("unable to resolve host", ignoreCase = true) == true) ||
+            (root is IOException && root.message?.contains("failed to connect", ignoreCase = true) == true)
     }
 
     private fun rootCause(throwable: Throwable): Throwable {

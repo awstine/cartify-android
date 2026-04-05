@@ -52,17 +52,23 @@ class BackendRepository {
     private fun <T> readStaleCache(entry: CacheEntry<T>?): T? = entry?.value
 
     suspend fun signUp(name: String, email: String, password: String): AuthResponse {
-        return BackendRetrofitInstance.api.signUp(SignUpRequest(name, email, password))
+        return BackendRetrofitInstance.call { api ->
+            api.signUp(SignUpRequest(name, email, password))
+        }
     }
 
     suspend fun login(email: String, password: String): AuthResponse {
-        return BackendRetrofitInstance.api.login(AuthRequest(email, password))
+        return BackendRetrofitInstance.call { api ->
+            api.login(AuthRequest(email, password))
+        }
     }
 
     suspend fun getProducts(storeSlug: String? = null): List<BackendProduct> {
         val key = storeSlug?.trim().orEmpty().ifBlank { "__all__" }
         val stale = readStaleCache(productsCache[key])
-        return runCatching { BackendRetrofitInstance.api.getProducts(storeSlug = storeSlug) }
+        return runCatching {
+            BackendRetrofitInstance.call { api -> api.getProducts(storeSlug = storeSlug) }
+        }
             .onSuccess { productsCache[key] = CacheEntry(it, nowMs()) }
             .getOrElse { throwable ->
                 stale ?: throw throwable
@@ -72,11 +78,11 @@ class BackendRepository {
     suspend fun getStores(): List<BackendStore> {
         val stale = readStaleCache(storesCache)
         return try {
-            BackendRetrofitInstance.api.getStores()
+            BackendRetrofitInstance.call { api -> api.getStores() }
                 .also { storesCache = CacheEntry(it, nowMs()) }
         } catch (http: HttpException) {
             if (http.code() == 404) {
-                BackendRetrofitInstance.api.getStoresFromApiRoot()
+                BackendRetrofitInstance.call { api -> api.getStoresFromApiRoot() }
                     .also { storesCache = CacheEntry(it, nowMs()) }
             } else {
                 stale ?: throw http
@@ -88,28 +94,32 @@ class BackendRepository {
 
     suspend fun getCart(token: String): CartResponse {
         readCache(cartCache[token])?.let { return it }
-        val response = BackendRetrofitInstance.api.getCart(bearer(token))
+        val response = BackendRetrofitInstance.call { api -> api.getCart(bearer(token)) }
         cartCache[token] = CacheEntry(response, nowMs())
         return response
     }
 
     suspend fun addToCart(token: String, productId: String, quantity: Int = 1) {
-        BackendRetrofitInstance.api.addToCart(bearer(token), AddCartItemRequest(productId, quantity))
+        BackendRetrofitInstance.call { api ->
+            api.addToCart(bearer(token), AddCartItemRequest(productId, quantity))
+        }
         cartCache.remove(token)
     }
 
     suspend fun checkout(token: String): CheckoutResponse {
-        val response = BackendRetrofitInstance.api.checkout(bearer(token))
+        val response = BackendRetrofitInstance.call { api -> api.checkout(bearer(token)) }
         cartCache.remove(token)
         ordersCache.remove(token)
         return response
     }
 
     suspend fun checkoutFromClient(token: String, items: List<ClientCheckoutItem>): CheckoutResponse {
-        val response = BackendRetrofitInstance.api.checkoutFromClient(
-            bearer(token),
-            ClientCheckoutRequest(items = items)
-        )
+        val response = BackendRetrofitInstance.call { api ->
+            api.checkoutFromClient(
+                bearer(token),
+                ClientCheckoutRequest(items = items)
+            )
+        }
         cartCache.remove(token)
         ordersCache.remove(token)
         return response
@@ -117,7 +127,7 @@ class BackendRepository {
 
     suspend fun getProfile(token: String): UserProfileResponse {
         readCache(profileCache[token])?.let { return it }
-        val response = BackendRetrofitInstance.api.getProfile(bearer(token))
+        val response = BackendRetrofitInstance.call { api -> api.getProfile(bearer(token)) }
         profileCache[token] = CacheEntry(response, nowMs())
         return response
     }
@@ -139,13 +149,15 @@ class BackendRepository {
                 darkModeEnabled = darkModeEnabled
             )
         )
-        val response = BackendRetrofitInstance.api.updateProfile(bearer(token), request)
+        val response = BackendRetrofitInstance.call { api ->
+            api.updateProfile(bearer(token), request)
+        }
         profileCache[token] = CacheEntry(response, nowMs())
         return response
     }
 
     suspend fun deleteAccount(token: String): DeleteAccountResponse {
-        val response = BackendRetrofitInstance.api.deleteAccount(bearer(token))
+        val response = BackendRetrofitInstance.call { api -> api.deleteAccount(bearer(token)) }
         wishlistCache.remove(token)
         ordersCache.remove(token)
         profileCache.remove(token)
@@ -155,25 +167,29 @@ class BackendRepository {
 
     suspend fun getOrders(token: String): List<BackendOrder> {
         readCache(ordersCache[token])?.let { return it }
-        val response = BackendRetrofitInstance.api.getOrders(bearer(token))
+        val response = BackendRetrofitInstance.call { api -> api.getOrders(bearer(token)) }
         ordersCache[token] = CacheEntry(response, nowMs())
         return response
     }
 
     suspend fun getWishlist(token: String): WishlistResponse {
         readCache(wishlistCache[token])?.let { return it }
-        val response = BackendRetrofitInstance.api.getWishlist(bearer(token))
+        val response = BackendRetrofitInstance.call { api -> api.getWishlist(bearer(token)) }
         wishlistCache[token] = CacheEntry(response, nowMs())
         return response
     }
 
     suspend fun addToWishlist(token: String, productId: String) {
-        BackendRetrofitInstance.api.addToWishlist(bearer(token), AddWishlistItemRequest(productId))
+        BackendRetrofitInstance.call { api ->
+            api.addToWishlist(bearer(token), AddWishlistItemRequest(productId))
+        }
         wishlistCache.remove(token)
     }
 
     suspend fun removeWishlistItem(token: String, productId: String) {
-        BackendRetrofitInstance.api.removeWishlistItem(bearer(token), productId)
+        BackendRetrofitInstance.call { api ->
+            api.removeWishlistItem(bearer(token), productId)
+        }
         wishlistCache.remove(token)
     }
 
@@ -183,14 +199,16 @@ class BackendRepository {
         rating: Int,
         comment: String
     ): SubmitProductReviewResponse {
-        return BackendRetrofitInstance.api.submitProductReview(
-            bearer(token),
-            productId,
-            SubmitProductReviewRequest(
-                rating = rating.coerceIn(1, 5),
-                comment = comment.trim()
+        return BackendRetrofitInstance.call { api ->
+            api.submitProductReview(
+                bearer(token),
+                productId,
+                SubmitProductReviewRequest(
+                    rating = rating.coerceIn(1, 5),
+                    comment = comment.trim()
+                )
             )
-        )
+        }
     }
 
     suspend fun prefetchForRoute(token: String, route: String) {

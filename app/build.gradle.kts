@@ -16,7 +16,7 @@ val localProps = Properties().apply {
 
 val backendBaseUrl = (localProps.getProperty("BACKEND_BASE_URL")
     ?: (project.findProperty("BACKEND_BASE_URL") as? String)
-    ?: "https://ecommerce-adroid-app.onrender.com/api/")
+    ?: "http://10.0.2.2:4000/api/")
 
 android {
     namespace = "com.cartify"
@@ -57,6 +57,8 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.compose.runtime)
+    implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)

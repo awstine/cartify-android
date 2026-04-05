@@ -37,6 +37,7 @@ import com.cartify.ui.theme.AuthFont
 import com.cartify.ui.theme.AuthSpacing
 
 @Composable
+@Suppress("FunctionName")
 fun SignUpScreen(
     viewModel: AuthViewModel,
     onSignUpSuccess: () -> Unit,
