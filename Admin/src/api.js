@@ -4,12 +4,7 @@ import { startLoadingProgress } from "./loadingProgress";
 const resolveApiBaseUrl = () => {
   const configured = String(import.meta.env.VITE_API_BASE_URL || "").trim();
   if (configured) return configured;
-
-  if (import.meta.env.DEV) {
-    return "http://localhost:4000/api";
-  }
-
-  return "https://ecommerce-adroid-app.onrender.com/api";
+  return "https://ecommerce-adroid-app-backend.onrender.com/api";
 };
 
 const API_BASE_URL = resolveApiBaseUrl();
