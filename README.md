@@ -1,596 +1,1878 @@
-# Cartify Project Documentation
+# Cartify Web Platform Documentation
+
+Backend API and Admin Frontend Reference
+
+Scope note: this document covers the web platform only. It documents the `backend/` service and the `Admin/` browser application. The native Android application in `app/` is intentionally excluded from scope.
 
 ## Table of Contents
 
-1. Introduction
-2. Project Vision and Problem Statement
-3. Solution Overview
-4. Repository Structure
+1. Scope and Audience
+2. Platform Summary
+3. Business Capabilities
+4. Repository Layout
 5. Technology Stack
-6. High-Level System Architecture
-7. End-to-End Runtime Flow
-8. Android Application Overview
-9. Android Startup and Application Shell
-10. Android Navigation Model
-11. Android Authentication Flow
-12. Android Product Discovery Experience
-13. Android Store Mode
-14. Android Product Details and Reviews
-15. Android Cart Management
-16. Android Checkout and Order Placement
-17. Android Orders, Wishlist, Profile, Settings, Help, and Growth Screens
-18. Android State Management and Local Persistence
-19. Android Networking Layer
-20. React Admin and Storefront Web Overview
-21. Web Authentication and Authorization
-22. Storefront Pages in the Web App
-23. Staff and Admin Pages in the Web App
-24. Backend Overview
-25. Backend Configuration and Startup
-26. Authentication and Role Model
-27. Product APIs
-28. Cart APIs
-29. Order APIs
-30. Wishlist APIs
-31. User APIs
-32. Store APIs
-33. Admin APIs
-34. Database Architecture
-35. Collection-by-Collection Schema Notes
-36. Business Rules and Domain Logic
-37. Security Design
-38. Error Handling and Resilience
-39. Setup, Local Development, and Deployment Notes
-40. Testing, Limitations, and Enhancement Opportunities
+6. High-Level Architecture
+7. Core Runtime Lifecycles
+8. Backend Service Overview
+9. Backend Configuration and Environment
+10. Authentication and Session Handling
+11. Role Model and Access Control
+12. Frontend Application Architecture
+13. Frontend Routing and Experience Model
+14. Storefront Workflows
+15. Admin Workflows
+16. API Standards and Conventions
+17. Authentication APIs
+18. Catalog, Search, Review, and Store APIs
+19. Cart, Checkout, Order, Dispute, and Return APIs
+20. User, Wishlist, and Profile APIs
+21. Admin API Surface
+22. Data Model and Collections
+23. Reporting, Analytics, and Audit Logging
+24. Local Development Guide
+25. Deployment Guide
+26. Operations Runbook
+27. Security Notes and Hardening Guidance
+28. Testing and Quality Strategy
+29. Known Gaps and Recommendations
+30. Conclusion
+31. Appendix A: Environment Variable Reference
+32. Appendix B: Endpoint Inventory
+33. Appendix C: Page Inventory
+34. Appendix D: Release Checklist
 
-## 1. Introduction
+## 1. Scope and Audience
 
-Cartify is a multi-surface commerce platform composed of a native Android shopping application, a Node.js and Express backend connected to MongoDB, and a React-based web interface that serves both as a storefront and as an internal staff dashboard. The codebase is structured as a single repository with three main modules: `app/` for the Android client, `backend/` for the API and business layer, and `Admin/` for the browser-based management and commerce interface.
+This README is intended to function as a long-form technical handover for the Cartify web platform. It is written for:
 
-The project is not a simple product catalog demo. It includes user authentication, merchant onboarding, store segmentation, product and category management, cart and checkout flows, order lifecycle management, disputes, wishlist alerts, coupon handling, audit logging, sales reporting, and multiple role-based administrative capabilities. The Android client also introduces a local experience layer for analytics, experiments, moderation flags, address book storage, recently viewed tracking, and feature flags. Taken together, Cartify behaves like a marketplace architecture with both centralized platform controls and merchant-scoped operations.
+- developers working on the backend API or the web frontend
+- QA engineers validating user flows and permissions
+- DevOps engineers deploying the platform
+- reviewers who need to understand the structure and behavior of the system without reading every file first
 
-This document explains how the full system works in practice. It covers the business purpose of the platform, the technical architecture, the responsibilities of each module, the mobile and web user journeys, the backend endpoint design, the MongoDB schema design, the role and permission model, and the operational concerns that affect deployment and maintenance.
+The repository is a monorepo, but this document is deliberately limited to the two web-facing modules:
 
-## 2. Project Vision and Problem Statement
+- `backend/`: the Node.js, Express, and MongoDB API
+- `Admin/`: the React browser application that serves both storefront and admin experiences
 
-The platform is designed to solve a common digital commerce problem: building a single environment where customers can discover and buy products, merchants can maintain their own stores and catalog entries, and staff or administrators can govern the marketplace. In many commerce systems, customer experience and merchant operations live in separate products with duplicated logic. Cartify reduces that separation by connecting all clients to one backend and one database while still respecting role boundaries and store ownership.
+The `app/` directory exists in the repository, but it is not documented here by design.
 
-At the customer level, the system focuses on browsing products, exploring stores, saving items to a wishlist, placing orders, tracking order history, and managing personal profile details. At the merchant level, it supports product creation, product updates, store maintenance, fulfillment updates, coupon management, and visibility into sales. At the platform level, it supports categories, user management, merchant provisioning, dispute handling, growth analytics, audit logs, and aggregated dashboards.
+## 2. Platform Summary
 
-The Android client targets the consumer shopping experience. The React web app covers both a public or semi-public storefront mode and an authenticated staff dashboard mode. The backend acts as the central enforcement layer for authentication, authorization, validation, persistence, checkout calculation, and reporting. MongoDB stores all durable business entities, while the Android app also uses local shared preferences for experience-related state that does not need to be synchronized immediately with the server.
+Cartify is a multi-role commerce platform built around one backend and one browser application. The backend exposes REST-style APIs for identity, products, carts, orders, wishlists, stores, administration, reporting, disputes, and audit logs. The browser application consumes those APIs and presents two connected experiences inside one frontend codebase:
 
-## 3. Solution Overview
+- a storefront for customers and merchants browsing products in the browser
+- an authenticated back-office dashboard for merchants and platform staff
 
-The repository delivers a marketplace-style commerce system with three cooperating layers. The Android app is written in Kotlin with Jetpack Compose and gives end users a modern mobile shopping interface. The Node.js backend uses Express and Mongoose to expose REST-style APIs, persist commerce data, and enforce role restrictions. The React app, built with Vite and Tailwind, provides browser-based access for both customers and staff users.
+The `Admin/` folder name is historical. It is not only an admin dashboard. It also contains customer-facing storefront routes such as home, stores, product details, cart, profile, wishlist, and my orders.
 
-The mobile client is connected directly to backend endpoints for authentication, products, stores, wishlist, profile, cart, checkout, and orders. The web app also talks to the same backend and uses a token stored in browser local storage to authorize requests. The backend issues JWT tokens and uses them in middleware to reconstruct the current user identity and role. MongoDB collections represent users, stores, products, carts, wishlists, orders, disputes, categories, coupons, search events, and audit logs.
+At the domain level, Cartify behaves like a marketplace:
 
-One of the most important architectural characteristics of Cartify is store scoping. Many platform features are global, but many operational features are restricted to a merchant’s own store. Products, coupons, disputes, and portions of order management all use store-aware query filtering. In effect, the backend is designed to behave as both a marketplace API and a merchant back-office API without requiring separate services.
+- customers can browse, save, and purchase products
+- merchants can sign up, receive a store automatically, manage their catalog, and fulfill store-scoped orders
+- support, managers, admins, and super admins can operate the platform with increasingly broad powers
 
-## 4. Repository Structure
+MongoDB is the system of record. JWT bearer tokens carry authenticated identity between browser and API. Most business rules are enforced on the server, including password hashing, store provisioning, order splitting by store, coupon validation, stock enforcement in direct checkout, and audit logging for sensitive admin actions.
 
-The top-level repository is organized around the three main runtime surfaces. The `app/` directory contains the Android application, including Compose UI screens, repositories, navigation, theme definitions, and backend API bindings. The `backend/` directory contains the Express server, environment configuration, route handlers, Mongoose models, migrations, utilities, and seed logic. The `Admin/` directory contains the React application used for storefront browsing and staff administration. Shared infrastructure files such as Gradle configuration, project settings, and the root documentation live at the repository root.
+## 3. Business Capabilities
 
-Within the Android app, source files are arranged into `data`, `domain`, and `ui` packages. The `data` package contains network models, Retrofit services, repositories, and local preference wrappers. The `ui` package contains screens, components, themes, and navigation. The backend organizes logic more conventionally around `config`, `middleware`, `models`, `routes`, `migrations`, and `utils`. The React app is structured around pages, components, context providers, API helpers, and authentication helpers.
+At a product level, the platform already supports a broad operational surface.
 
-This structure keeps each platform self-contained while allowing all three modules to evolve together. The repository therefore behaves as a monorepo for a single product rather than as several unrelated projects.
+### Customer capabilities
+
+- account signup and login
+- store browsing and product browsing
+- product search, category filtering, rating filtering, price filtering, and stock filtering
+- adding products to a server-side cart
+- cart checkout with coupon support
+- direct order checkout from explicit item payloads
+- order history and order detail retrieval
+- return and refund requests after delivery
+- order dispute submission
+- wishlist management with alert preferences
+- profile editing and address management
+
+### Merchant capabilities
+
+- self-service merchant signup with automatic store creation
+- store-scoped dashboard access
+- product CRUD within merchant scope
+- store profile editing
+- store-scoped order management
+- shipping updates and fulfillment timeline entries
+- coupon creation and management for the merchant store
+- visibility into sales, growth, and disputes for owned records
+
+### Platform staff capabilities
+
+- dashboard metrics and low-stock visibility
+- global category administration
+- platform-wide product administration
+- customer and system user directory access
+- merchant provisioning and merchant store activation control
+- dispute resolution
+- sales reporting and export
+- audit log inspection
+- profile and password management for staff users
+
+## 4. Repository Layout
+
+The web platform lives in two primary top-level directories.
+
+```text
+cartify-android/
+|- Admin/                 React + Vite browser application
+|  |- src/
+|  |  |- App.jsx          Route map
+|  |  |- auth.jsx         Auth context and session persistence
+|  |  |- api.js           Axios client, token injection, prefetch cache
+|  |  |- components/      Shared UI and layout wrappers
+|  |  |- pages/           Storefront and admin screens
+|  |  |- context/         Toast and theme providers
+|  |  `- storeMode.js     Store slug propagation helpers
+|  `- .env.example        Frontend API base configuration
+|- backend/               Node.js API
+|  |- src/
+|  |  |- server.js        Express bootstrap and route mounting
+|  |  |- config/          Env parsing and Mongo connection
+|  |  |- middleware/      Auth and role middleware
+|  |  |- models/          Mongoose schemas
+|  |  |- routes/          Route groups by domain
+|  |  |- migrations/      One-off data repair scripts
+|  |  |- utils/           Audit helpers
+|  |  `- seed.js          Sample product seeding
+|  `- .env.example        Backend env template
+`- app/                   Android application, excluded from this document
+```
+
+This structure keeps browser and API concerns separate while still allowing them to evolve in the same repository.
 
 ## 5. Technology Stack
 
-The Android client uses Kotlin, Jetpack Compose, Material 3, Android ViewModel support libraries, Navigation Compose, Retrofit, Gson, OkHttp logging interceptors, Coil for image loading, Kotlin serialization, and SharedPreferences for local persistence. The minimum Android SDK is 26 and the project is configured for compile and target SDK 36.
+| Layer | Technology | Notes |
+| --- | --- | --- |
+| Frontend runtime | React 18 | Main UI library for storefront and admin experiences |
+| Frontend routing | React Router 6 | Uses `HashRouter`, which simplifies static hosting |
+| Frontend build | Vite 5 | Fast local development and production bundling |
+| Frontend styling | Tailwind CSS | Utility-first styling with custom UI primitives |
+| Frontend forms | React Hook Form + Zod | Used in forms and validation-heavy admin screens |
+| Frontend HTTP | Axios | Centralized API client with interceptors |
+| Backend runtime | Node.js | ECMAScript module mode |
+| Backend framework | Express 4 | JSON APIs and route middleware |
+| Data access | Mongoose 8 | MongoDB ODM, schemas, indexes, model validation |
+| Authentication | JWT + bcryptjs | Bearer tokens and password hashing |
+| Validation | express-validator | Request validation for mutable endpoints |
+| Reporting | PDFKit | Generates sales export PDFs |
+| Data store | MongoDB | Primary persistent store |
+
+Additional implementation details that matter operationally:
+
+- the frontend displays currency as Kenyan shillings (`KES`) in several screens
+- the backend accepts JSON payloads up to `10mb`
+- the backend enables CORS globally with the default `cors()` behavior
+- the admin frontend is intentionally light on dependencies and relies on shared internal UI wrappers
+
+## 6. High-Level Architecture
+
+The system is a standard client-server architecture with role-aware scoping layered into the API.
+
+```text
+Browser
+  |
+  |  HashRouter + React pages
+  |  AuthProvider + Axios interceptors
+  v
+Cartify Web App (Admin/)
+  |
+  |  Bearer token over HTTP
+  v
+Cartify Backend (Express)
+  |
+  |  requireAuth / role middleware
+  |  business rules / validation / audit logging
+  v
+MongoDB (Mongoose models)
+```
+
+The key architectural ideas are:
+
+1. One backend serves every client type.
+   Customers, merchants, support users, managers, admins, and super admins all use the same API service.
+
+2. One browser application serves two experiences.
+   The frontend contains public or customer-facing routes and protected admin routes in a single React app.
+
+3. Store scope is a first-class concept.
+   Merchants are tied to a `storeId`, and many admin queries are automatically restricted to that store.
+
+4. MongoDB documents intentionally denormalize some historical data.
+   Orders embed order items and shipping timeline details so historical order records remain stable even if the source product later changes.
+
+## 7. Core Runtime Lifecycles
+
+Understanding the platform is easiest when you follow a few common end-to-end flows.
+
+### 7.1 Customer signup
+
+1. The browser submits name, email, password, and phone number to `POST /api/auth/signup`.
+2. The backend validates the payload and rejects duplicates by email.
+3. Passwords are hashed with bcrypt.
+4. A `User` document is created with the `customer` role.
+5. An empty `Cart` and empty `Wishlist` document are automatically provisioned.
+6. A JWT is issued and returned with a sanitized user object.
+7. The frontend stores the token and user payload in local storage under `cartify_admin_auth`.
+
+### 7.2 Merchant signup
+
+1. The browser submits account details plus a store name.
+2. The frontend first tries `POST /api/auth/signup-merchant`.
+3. If that path is unavailable, it falls back to `/api/auth/merchant-signup` and then `/api/auth/signup/merchant`.
+4. The backend creates a merchant user, generates a unique slug from the store name, creates the `Store` document, attaches `storeId` back to the user, and returns both user and store metadata.
+5. The merchant is immediately authenticated and can enter the admin dashboard.
+
+### 7.3 Storefront browsing
+
+1. The customer lands on `/` or `/store/:storeSlug`.
+2. `StoreLayout` prefetches stores and products.
+3. Filters such as search text, category, in-stock-only, minimum rating, and max price are expressed as query parameters.
+4. The frontend calls `/api/products` and optionally `/api/stores`.
+5. Store categories in the navigation are derived from the live product payload rather than a dedicated public category API.
 
-The backend uses Node.js in ECMAScript module mode, Express for HTTP routing, Mongoose for MongoDB access, `jsonwebtoken` for JWT issuance and verification, `bcryptjs` for password hashing, `express-validator` for request validation, `cors` for cross-origin support, `dotenv` for environment loading, and `pdfkit` for PDF export generation.
+### 7.4 Cart checkout
+
+1. The customer adds items using `/api/cart/items`.
+2. The browser opens `/cart`, loads `/api/cart`, and displays enriched cart lines with product and store data.
+3. Checkout posts to `POST /api/cart/checkout`.
+4. The backend loads product data, applies coupon logic, groups items by store, creates one order per store bucket, clears the cart, and returns a consolidated summary.
 
-The web application uses React 18, React Router, Axios, React Hook Form, Zod, Vite, Tailwind CSS, PostCSS, and Autoprefixer. The web app is intentionally lightweight in its dependency profile and relies heavily on custom pages and reusable UI wrappers.
+### 7.5 Direct checkout
 
-Across the whole system, MongoDB is the durable data store, JWT tokens are the primary authentication artifact, and REST-style HTTP APIs are the integration contract between frontends and the backend.
+1. A client posts explicit order items to `POST /api/orders/checkout`.
+2. The backend resolves products, validates stock and variants, decrements stock, validates coupons, groups lines by store, creates orders, and returns summary totals.
+3. This path is authoritative for inventory reduction in the current codebase.
 
-## 6. High-Level System Architecture
+### 7.6 Admin product update
 
-At a high level, Cartify follows a client-server architecture with multiple clients. The Android application and the React web app act as independent presentation layers. Both send requests to the backend API, which applies authentication, validation, role rules, business logic, and persistence. MongoDB stores the final state of business entities. The backend does not expose GraphQL or event-driven infrastructure in this repository; instead, it relies on direct HTTP request-response patterns.
+1. A staff user edits a product in `/admin/products`.
+2. The frontend submits to `PUT /api/admin/products/:id`.
+3. The backend validates role, enforces category validity, normalizes arrays such as sizes and colors, persists the update, and writes an audit log entry.
+4. The updated document is returned to the UI.
 
-The server bootstraps by loading environment variables, connecting to MongoDB, and registering route groups under `/api`. The core route groups are authentication, products, cart, orders, wishlist, users, admin, and stores. Each route group is responsible for its own validation and most also rely on middleware such as `requireAuth`, `requireManagerOrAbove`, or `requireAdminOrAbove`.
+## 8. Backend Service Overview
 
-The Android and web clients both implement their own local experience layer. The mobile client goes further by storing reviews, recently viewed items, analytics counters, address book entries, moderation flags, feature flags, and experiment assignments locally in SharedPreferences. The web client uses browser local storage for auth state and request prefetch caching.
+The backend boots from `backend/src/server.js`. Its responsibilities are simple and centralized:
 
-## 7. End-to-End Runtime Flow
+- enable CORS
+- parse JSON bodies
+- expose `GET /health`
+- expose a root info endpoint at `/`
+- mount route groups
+- connect to MongoDB before listening
+- retry on nearby ports in development if the preferred port is already in use
 
-A typical customer journey begins when the Android app launches. The app preloads product data and attempts to prefetch store information. Once startup is complete, the user can browse products, open a product detail screen, add items to the local cart, or authenticate if they want to access protected capabilities such as wishlist, checkout, orders, or profile features. Authentication calls the backend `/api/auth/signup` or `/api/auth/login` endpoint and stores the resulting JWT token in the mobile auth state. Once authenticated, the client begins using authorized endpoints such as `/api/wishlist`, `/api/orders`, `/api/users/me`, and `/api/orders/checkout`.
+Mounted route groups:
 
-On the web side, a user can browse the storefront, navigate to stores, view products, and open a cart or profile area when authenticated. Staff users with roles such as merchant, support, manager, admin, or super admin are routed into the admin dashboard pages. Every request carries the bearer token once the auth context is established. The web app then uses the admin APIs to load dashboards, manage products, process orders, create coupons, view audit logs, and administer merchants or users depending on permissions.
+- `/api/auth`
+- `/api/products`
+- `/api/cart`
+- `/api/orders`
+- `/api/wishlist`
+- `/api/users`
+- `/api/admin`
+- `/api/stores`
+- `/stores` as a compatibility alias for store routes
 
-On the backend, requests are translated into MongoDB queries or updates. Important business workflows include customer signup with cart and wishlist creation, merchant signup with automatic store creation, checkout with store-based order splitting, coupon application, stock decrement logic for direct item checkout, return and refund request submission, dispute lifecycle management, and audit log creation for sensitive admin operations.
+Important implementation behaviors:
 
-## 8. Android Application Overview
+- `express.json({ limit: "10mb" })` allows fairly large payloads, especially for metadata-heavy admin requests
+- the generic error handler returns `{ message: "Internal server error" }`
+- the service refuses to start if MongoDB cannot be reached
+- in development, the server may shift from `4000` to nearby ports if the port is busy
 
-The Android application is the primary customer-facing shopping surface in this repository. It is a Compose-first application with one activity, a navigation host, several dedicated screen modules, and repositories that separate remote data access from UI state management. The mobile app presents itself as a shopping interface, but it also includes experience instrumentation and customer account features that resemble a production commerce product rather than a static sample.
+The backend is the enforcement layer for business rules. The frontend can suggest actions, but the backend decides whether they are valid.
 
-The app is bootstrapped in `MainActivity.kt`. It constructs application-scoped preference and repository objects, initializes the cart and product view models, performs startup prefetching, and then mounts the `AppNavHost`. The app theme can be toggled using persisted preferences. Product data is treated as core startup data, while store prefetching is attempted with a time-bounded best-effort strategy.
+## 9. Backend Configuration and Environment
 
-The Android client contains two parallel ideas of persistence. Durable platform data such as users, orders, stores, and products lives in MongoDB and is fetched through the backend. Experience-level state such as recently viewed items, product text reviews, local analytics counters, address book entries, and feature flags lives in SharedPreferences through `CommerceExperienceRepository`. This gives the app a hybrid offline-friendly behavior for noncritical features.
+Environment variables are loaded through `dotenv` in `backend/src/config/env.js`.
 
-## 9. Android Startup and Application Shell
+### Required variables
 
-At application startup, `MainActivity` initializes `AppPreferences`, `CartRepository`, `ProductRepository`, and `BackendRepository`. It then creates `CartViewModel` and `ProductViewModel` using factories. Inside a `LaunchedEffect`, the app concurrently waits for initial product loading and attempts to retrieve stores from the backend. Product loading is given a larger timeout than store loading because the product feed is foundational to the app experience.
+- `MONGODB_URI`
+- `JWT_SECRET`
 
-Until startup completes, the UI shows a dedicated loading screen labelled "Preparing app data...". Once ready, the `CartifyTheme` wraps the navigation host. The theme is connected to the dark mode setting stored in preferences, so toggling dark mode affects subsequent app sessions.
+### Optional variables
 
-The application shell uses `Scaffold` with a bottom navigation bar for the main surfaces. Snackbars are used for feedback such as wishlist actions, review submission results, stock errors, and sync failures. Route-based logic determines whether the bottom bar is shown and whether a bootstrap loading experience should replace the navigation content temporarily.
+- `PORT` default `4000`
+- `NODE_ENV` default `development`
+- `JWT_EXPIRES_IN` default `7d`
+- `ADMIN_EMAILS`
+- `SUPER_ADMIN_EMAILS`
+- `MANAGER_EMAILS`
+- `SUPPORT_EMAILS`
 
-## 10. Android Navigation Model
+The email-based role lists matter more than they first appear. During login, the backend recalculates the effective role for a user based on email address and the configured env lists. This means operational role assignment can be driven by deployment configuration instead of database updates alone.
 
-Navigation is handled by `AppNavHost` using Navigation Compose. The primary routes include products, categories, wishlist, cart, profile, stores, orders, offers, settings, help, about, checkout, checkout success, login, signup, and product details. There are also dedicated flows for order details and authentication success.
+Example backend `.env`:
 
-The navigation system is tied closely to auth gating. Rather than simply blocking unauthorized pages, the app uses a pending action mechanism. When a user tries to perform an authenticated action such as adding to wishlist or opening checkout without being logged in, the app stores the intended action and return route. After successful login or signup, the app resumes the original user intent. This creates a smoother commerce experience and reduces friction during conversion flows.
+```env
+PORT=4000
+MONGODB_URI=mongodb://127.0.0.1:27017/cartify
+JWT_SECRET=change_me
+JWT_EXPIRES_IN=7d
+ADMIN_EMAILS=admin@cartify.com
+SUPER_ADMIN_EMAILS=
+MANAGER_EMAILS=
+SUPPORT_EMAILS=
+```
 
-Another notable navigation behavior is route prefetching. When the user navigates to certain routes such as wishlist, cart, orders, or profile, the app proactively asks the backend repository to warm related caches. This helps reduce visible latency for data-heavy destinations and makes navigation feel more responsive.
+Mongo connectivity is handled by Mongoose with a `serverSelectionTimeoutMS` of `10000`. A failed connection causes startup failure rather than degraded operation.
 
-## 11. Android Authentication Flow
+## 10. Authentication and Session Handling
 
-Authentication on Android is driven by `AuthViewModel` and backend calls defined in `BackendApiService`. The supported backend operations are signup and login. Signup sends name, email, and password. Login sends email and password. The response includes a JWT token and a user payload. Merchant signup exists on the backend but is not the primary mobile onboarding flow exposed in the Android source inspected here.
+Authentication is JWT-based across the entire web platform.
 
-The app uses dedicated login, signup, and auth success screens. If an authenticated action is attempted while unauthenticated, the view model records a `PendingAuthAction`. After login or signup succeeds, the app either returns to the original route or sends the user to a success page if there was no deferred action. This is especially important for commerce actions such as adding to cart from a product page, opening wishlist, or proceeding to checkout.
+### Backend token contents
 
-The JWT token obtained from the backend is then attached to authorized calls via the backend repository. Once logged in, the app begins syncing wishlist data, loading user profile data, and accessing order endpoints. If a token is missing or blank when a protected workflow is triggered, the app surfaces an error or redirects the user through the login path again.
+The backend signs tokens with:
 
-## 12. Android Product Discovery Experience
+- `sub`: the user id
+- `email`
+- `role`
+- `storeId` when available
 
-Product discovery is anchored around `ProductRepository`, `ProductViewModel`, and `ProductScreen`. `ProductRepository` loads products from the backend through `BackendRepository.getProducts()` and converts backend models into UI models. The repository keeps the last successful product list in memory so it can degrade gracefully when network failures occur after an earlier successful fetch.
+Tokens are verified by `requireAuth`, which reconstructs `req.user`.
 
-The product feed supports broad marketplace browsing. Products are loaded from `/api/products` and then transformed from backend IDs into stable integer UI IDs by hashing the MongoDB string identifier. This allows the mobile UI to continue using integer IDs while preserving a link back to the backend object through the `backendId` field.
+### Frontend session persistence
 
-The app also builds several experience layers on top of the raw product list. It derives category lists from products, derives category cover images from product image collections, tracks recently viewed products, and generates recommendation candidates based on categories the user has viewed. The Android code also filters products locally if they have been blocked in the moderation state stored by `CommerceExperienceRepository`.
+The React app stores auth state in browser local storage under:
 
-## 13. Android Store Mode
+```text
+cartify_admin_auth
+```
 
-One of the distinctive capabilities in the Android app is store mode. Instead of only presenting a flat marketplace, the app can pivot into a store-scoped view where products, categories, and profile affordances are filtered to a single merchant store. Store data is prefetched at startup when possible and can also be loaded on demand.
+That payload includes:
 
-Store mode is implemented through local state in `AppNavHost`, including `currentStoreSlug`, `currentStoreName`, `currentStoreDescription`, and `storeModeProducts`. When a store is opened, the app fetches products filtered by `storeSlug` using the same backend product endpoint. The UI then uses the store-specific collection as the active product source until the user chooses to return to the broader market.
+- `token`
+- `user`
 
-Several screens are store-aware. Categories show a store banner and a "Back to market" action when the user is inside a store. The profile and other surfaces also display store context and surface retry behavior if store-specific data loading fails. This design lets the same Android shell act as both a marketplace browser and a merchant storefront browser.
+On startup, `AuthProvider` reads local storage, restores session state, and configures Axios to send:
 
-## 14. Android Product Details and Reviews
+```http
+Authorization: Bearer <token>
+```
 
-The product details experience is implemented by `ProductDetailsScreen`. It loads the selected product, related products, review content, wishlist state, and order-related affordances. The app supports favorite toggling, add-to-cart, order-now checkout initiation, review submission, and review reporting.
+### Frontend auth behaviors
 
-Wishlist state is synchronized with the backend when the user is logged in. If the user toggles the favorite state, the app calls `/api/wishlist/items` or `/api/wishlist/items/:productId` depending on whether the product is being added or removed. The screen then updates a local set of wishlist product IDs for immediate feedback.
+- `/login` supports both login and signup in one page
+- signup supports two account types: customer and merchant
+- staff users redirect to `/admin` after login
+- non-staff users redirect to `/`
+- protected customer routes use `ProtectedRoute`
+- protected staff routes use `StaffRoute`
 
-Review handling is hybrid. The app can submit a review to the backend using `/api/products/:productId/reviews`, but it also stores text reviews locally through `CommerceExperienceRepository`. If the backend call fails, the app still preserves the review locally and informs the user that the review was saved locally even though server sync failed. This is a resilience-oriented behavior that keeps user effort from being lost.
+### API base URL resolution
 
-The details screen also supports review moderation reporting on the client side. Reporting a review adds it to a locally persisted flagged set. Product moderation can also hide products entirely through the blocked product list in local state.
+The frontend resolves its API base URL in this order:
 
-## 15. Android Cart Management
+1. `VITE_API_BASE_URL` if provided
+2. otherwise `https://ecommerce-adroid-app-backend.onrender.com/api`
 
-The Android app has both a local cart repository and backend cart endpoints. `CartRepository` persists cart contents in SharedPreferences under the `cartify_cart` preference store. It supports adding items, increasing and decreasing quantity, removing items, clearing the cart, and loading saved cart state on startup.
+That fallback matters in production and in demos, but local development should explicitly set the env value to avoid ambiguity.
 
-The current mobile checkout flow relies primarily on local cart contents and then sends a client-side checkout payload to the backend using `/api/orders/checkout`. The app also contains backend cart API bindings such as `GET /cart`, `POST /cart/items`, `PATCH /cart/items/{productId}`, and `DELETE /cart/items/{productId}`, which suggests the platform is designed for or evolving toward richer cart synchronization. The repository already exposes those operations.
+## 11. Role Model and Access Control
 
-From the user perspective, cart interactions are immediate because they are local. Add-to-cart operations happen through the product view model and cart repository. The cart item count is displayed in the navigation shell. The design prioritizes responsiveness on mobile while still allowing the backend to be the final authority at order creation time.
+Cartify defines six roles:
 
-## 16. Android Checkout and Order Placement
+| Role | Purpose | Typical surface |
+| --- | --- | --- |
+| `customer` | Buyer account | Storefront, cart, profile, orders, wishlist |
+| `merchant` | Store owner | Storefront plus store-scoped admin tools |
+| `support` | Service staff | Admin route group with support-level visibility |
+| `manager` | Operational manager | Admin tools with broader mutation powers |
+| `admin` | Platform administrator | Platform-wide admin control |
+| `super_admin` | Highest-trust platform role | Full control, plus protected from deletion |
 
-Checkout in the Android app is a protected workflow. If a user is not logged in, the app redirects them through authentication and then resumes the checkout attempt. When checkout begins, the app constructs a list of `ClientCheckoutItem` objects from the locally selected cart items and the currently loaded product models. It then calls `BackendRepository.checkoutFromClient`, which posts to `/api/orders/checkout`.
+### Middleware tiers
 
-The checkout screen receives pricing numbers through navigation arguments such as subtotal, shipping, tax, discount, and total. For an "order now" flow launched directly from a product details page, the app calculates shipping and tax locally before navigating into the checkout route. The actual authoritative order creation happens on the backend, where items are revalidated, product records are resolved, stock is checked, coupons are validated, and store-based orders are created.
+| Middleware | Allowed roles | What it means in practice |
+| --- | --- | --- |
+| `requireAuth` | any authenticated user | Token must be valid |
+| `requireSupportOrAbove` | merchant, support, manager, admin, super_admin | Entry gate for `/api/admin` |
+| `requireManagerOrAbove` | merchant, manager, admin, super_admin | Used for product writes, coupon writes, order updates |
+| `requireAdminOrAbove` | admin, super_admin | Used for destructive or platform-wide admin actions |
+| `requireSuperAdmin` | super_admin | Reserved for highest-trust actions |
 
-After successful checkout, the app records a local analytics event, clears the local cart, and navigates to a dedicated checkout success screen. If an error occurs during order placement, the checkout screen surfaces a friendly message such as "Unable to place order." The backend response includes a summary object, so the client can align user-visible totals with server-generated results.
+There is an important nuance here: `requireManagerOrAbove` includes merchants. The name suggests only managers and above, but merchants are intentionally included so they can manage their own products, coupons, and order fulfillment.
 
-## 17. Android Orders, Wishlist, Profile, Settings, Help, and Growth Screens
+### Store scoping
 
-The Android app contains a large supporting surface area beyond the product feed. The orders screen loads authenticated order history. Order details render the lifecycle status, item breakdown, invoice rows, and reorder capability. The code also includes helper logic for estimated delivery dates and whether an order is cancelable based on how recently it was created.
+The backend uses helper functions to constrain queries:
 
-The wishlist screen uses backend data to display saved products, alert settings, and stock or price change indicators. The server tracks the last known price and stock state for wishlist items, which allows alert-state computation such as price drops or back-in-stock detection.
+- `getStoreScope(req)` for store-bound documents like products and coupons
+- `getOrderScope(req)` for orders, with merchant access based on `storeId` or `merchantUserId`
 
-The profile screen merges remote profile information with local convenience shortcuts. It presents profile details, login or logout actions, navigation into wishlist and stores, and order shortcuts. It also shows a "Products For You" feed based on available product data and local personalization context.
+Platform admins operate without store restrictions. Merchants are filtered to owned data. Some pages also add UI-level platform-only restrictions, such as hiding the user directory, merchant directory, and audit logs from non-platform staff.
 
-The settings screen is heavily local-experience oriented. It supports low data mode toggling, a local account security panel, password reset request recording, simulated email verification, session revocation, and a locally stored address book. The help screen includes support tracking and local moderation actions such as flagging or blocking products. The offers screen acts as a growth dashboard by rendering locally tracked analytics counters and exposing feature flag switches. The about screen provides a static application identity summary.
+## 12. Frontend Application Architecture
 
-## 18. Android State Management and Local Persistence
+The browser application is bootstrapped from `Admin/src/main.jsx` and wrapped in several providers:
 
-State in the Android application is distributed across view models, repositories, and Compose state. Remote data state is handled through repositories such as `BackendRepository` and `ProductRepository`, with view models exposing Compose-friendly flows. Local behavior-oriented state is persisted through SharedPreferences wrappers such as `AppPreferences`, `CartRepository`, and `CommerceExperienceRepository`.
+- `HashRouter`
+- `ThemeProvider`
+- `ToastProvider`
+- `AuthProvider`
+- `TopProgressBar`
 
-`AppPreferences` stores dark mode and notification settings. `CartRepository` stores cart line items. `CommerceExperienceRepository` stores product text reviews, wishlist alert preferences, address book entries, analytics counters, recently viewed products, return request identifiers, low data mode state, account security state, moderation state, feature flags, and experiment assignments. This repository exposes these values as `StateFlow`, which makes them easy to consume in Compose.
+### Why `HashRouter` matters
 
-This approach gives the application several useful properties. It supports immediate UI updates without requiring every change to round-trip through the backend. It also reduces the risk of losing user context during transient network failures. The tradeoff is that some data exists only locally and therefore is not automatically consistent across devices.
+Because the app uses hash-based routing, static hosting is easier:
 
-## 19. Android Networking Layer
+- URLs take the form `/#/admin/products` instead of needing server-side rewrite rules
+- deployments to simple static hosts are less fragile
 
-The Android networking layer is defined under `app/src/main/java/com/cartify/data/remote/backend`. `BackendApiService` contains the Retrofit interface, `BackendModels.kt` contains request and response data classes, and `BackendRepository` wraps the raw service calls with convenience methods and lightweight in-memory caching.
+### Shared frontend infrastructure
 
-The base URL is injected through `BuildConfig.BACKEND_BASE_URL`, which is configured in `app/build.gradle.kts`. If not supplied via `local.properties` or a Gradle property, it defaults to `https://ecommerce-adroid-app-backend.onrender.com/api/`. This makes the mobile client environment-aware and allows local or hosted backends to be swapped without code changes.
+#### API client
 
-`BackendRepository` caches wishlist, orders, profile, cart, products, and store responses with a one-minute TTL. It can also return stale cache data if a network call fails after a successful previous response. This is an important resilience feature because it helps keep the mobile app usable during intermittent network conditions.
+`Admin/src/api.js` provides:
 
-## 20. React Admin and Storefront Web Overview
+- a centralized Axios instance
+- token injection from local storage
+- a progress indicator hook for network requests
+- a short-lived prefetch cache with a default TTL of 30 seconds
 
-The `Admin/` module is more than a pure admin console. It contains both public or customer-facing storefront routes and staff-only admin routes. The application uses React Router to separate those experiences while keeping them in one frontend codebase. It is therefore best understood as a commerce web shell with dual modes.
+#### Auth context
 
-The public side includes routes for the home page, store listing, individual store view, product page, cart, customer orders, profile, wishlist, and a help and safety page. The protected side includes dashboards and CRUD screens for staff users. Route wrappers such as `ProtectedRoute` and `StaffRoute` enforce whether a user must simply be logged in or must also have a staff-capable role.
+`Admin/src/auth.jsx` provides:
 
-Because the frontend relies on the same backend as the Android app, both mobile and web experiences share authentication semantics, product and order data, role definitions, and overall business rules. This reduces duplication and means platform changes can generally be implemented once at the backend layer.
+- login
+- customer signup
+- merchant signup with route alias fallback
+- logout
+- user updates
+- helper booleans such as `isAuthenticated` and `isStaff`
 
-## 21. Web Authentication and Authorization
+#### Theme handling
 
-The React app stores auth state under the `cartify_admin_auth` key in browser local storage. The auth context loads that state on startup, injects the token into the Axios client, and persists updated state whenever a user logs in, signs up, signs up as a merchant, or logs out.
+Dark mode is currently disabled in the web app. `ThemeProvider` forces a light experience and exposes a no-op toggle.
 
-Login uses `POST /auth/login`. Standard signup uses `POST /auth/signup`. Merchant signup is more flexible and tries multiple endpoint aliases in order: `/auth/signup-merchant`, `/auth/merchant-signup`, and `/auth/signup/merchant`. This suggests the frontend was designed to remain compatible with older or alternative backend path conventions.
+#### Toasts
 
-Staff access is defined by role membership. The web app recognizes `merchant`, `support`, `manager`, `admin`, and `super_admin` as staff roles. Protected admin routes are only accessible when the current auth state indicates one of those roles. Purely customer-only routes such as profile and wishlist will redirect staff users toward admin profile views instead of the storefront equivalents.
+The toast system provides lightweight feedback for CRUD actions, errors, and background notifications. Toasts are short-lived and dismiss automatically.
 
-## 22. Storefront Pages in the Web App
+## 13. Frontend Routing and Experience Model
 
-The web app includes a storefront shell through `StoreLayout`. The home page and store pages allow browsing the marketplace and individual merchant offerings. Product pages present item-specific details. The cart, my orders, profile, and wishlist routes require authentication for nonstaff users. The help and safety page is accessible in the storefront mode as well.
+The routing map in `Admin/src/App.jsx` separates public, authenticated, and staff-only routes.
 
-The storefront pages are important because they show that Cartify is not implemented as "mobile app for customers and web app for staff only." The browser-based interface is also a customer channel. This increases the product reach of the platform and provides a second consumer surface tied to the same business entities.
+### Storefront routes
 
-The dual-purpose design also influences backend route design. A single API layer must support both mobile and web customers, both web merchants and platform staff, and operational features such as reporting and dispute resolution.
+| Route | Access | Purpose |
+| --- | --- | --- |
+| `/` | public | Market home |
+| `/stores` | public | Store listing |
+| `/store/:storeSlug` | public | Store-specific browsing |
+| `/product/:id` | public | Product detail |
+| `/cart` | authenticated | Server-side cart and checkout |
+| `/my-orders` | authenticated | Customer order history |
+| `/profile` | authenticated | Customer profile |
+| `/wishlist` | authenticated | Customer wishlist |
+| `/help-safety` | public | Trust and support page |
+| `/login` | public | Login and signup |
 
-## 23. Staff and Admin Pages in the Web App
+### Admin routes
 
-The admin portion of the web app includes a dashboard, products page, categories page, orders page, users page, merchants page, disputes page, growth dashboard, sales page, coupons page, audit logs page, and profile page. These map closely to the `/api/admin` route set in the backend.
+| Route | Access | Purpose |
+| --- | --- | --- |
+| `/admin` | staff | Dashboard |
+| `/admin/products` | staff | Product management |
+| `/admin/categories` | staff | Category management |
+| `/admin/orders` | staff | Order operations |
+| `/admin/users` | platform admin | User directory |
+| `/admin/merchants` | platform admin | Merchant directory and provisioning |
+| `/admin/disputes` | staff | Dispute handling |
+| `/admin/growth` | staff | Growth metrics |
+| `/admin/sales` | staff | Sales analytics and export |
+| `/admin/coupons` | staff | Coupon management |
+| `/admin/audit-logs` | platform admin | Governance trail |
+| `/admin/profile` | staff | Staff profile and password |
 
-The dashboard summarizes counts and profitability-related metrics. The products page supports listing and managing inventory. Categories allow platform-level catalog taxonomy maintenance. Orders support operational status changes and shipping updates. Users and merchants provide directory and provisioning functions. Disputes expose post-order support workflows. Sales supports summarized performance views and export. Coupons support promotion management. Audit logs support governance and traceability.
+### Route wrappers
 
-The presence of merchant-focused capabilities inside the same admin shell is especially important. Merchants are treated as staff users, but their scope is more limited than that of platform admins. Many backend queries enforce that a merchant can only act on their own store’s records.
+- `ProtectedRoute` redirects anonymous users to `/login`
+- `StaffRoute` redirects anonymous users to `/login` and non-staff users to `/`
 
-## 24. Backend Overview
+### Store context propagation
 
-The backend is a REST-style Express application that exposes the Cartify business domain over JSON APIs. It sets up CORS, accepts JSON payloads up to 10 MB, exposes a `/health` endpoint, and mounts route groups under `/api`. It also exposes store routes under both `/api/stores` and `/stores`, likely for compatibility with different client expectations.
+The frontend preserves store context through `storeMode.js` using:
 
-The server starts only after MongoDB connectivity succeeds. In development mode it will try additional ports if the default is already in use. This small but practical behavior helps reduce friction during local development.
+- a direct route segment: `/store/:slug`
+- a query parameter on other pages: `?store=<slug>`
 
-The backend centralizes the platform’s business rules. It is responsible for hashing passwords, issuing JWTs, validating request bodies, enforcing access control, creating carts and wishlists for new customers, creating stores for new merchants, validating category usage during product writes, splitting orders by store, updating stock, validating coupons, recording disputes, and writing audit logs for sensitive staff actions.
+This lets a user move from a store-specific catalog into cart, profile, and orders without losing store context.
 
-## 25. Backend Configuration and Startup
+## 14. Storefront Workflows
 
-Environment variables are loaded through `dotenv` and validated in `backend/src/config/env.js`. The backend requires `MONGODB_URI` and `JWT_SECRET`. It also accepts `PORT`, `NODE_ENV`, `JWT_EXPIRES_IN`, and comma-separated role mapping lists for `ADMIN_EMAILS`, `SUPER_ADMIN_EMAILS`, `MANAGER_EMAILS`, and `SUPPORT_EMAILS`.
+The storefront is not a placeholder. It implements real commerce flows in the browser.
 
-This email list design is significant because role resolution is partly configuration-driven. When a user logs in, the backend recalculates what role they should have based on their email address and these environment variables. That means platform role assignment can be influenced operationally without directly editing database records for every case.
+### 14.1 Landing and browsing
 
-MongoDB connectivity is managed through Mongoose with a server selection timeout. If the connection fails, the server process exits rather than running in a broken partial state. This is the correct operational choice for an API that depends entirely on its database.
+`StoreLayout` prefetches:
 
-## 26. Authentication and Role Model
+- `/stores`
+- `/products`
 
-Cartify supports six primary roles in the `User` model: `customer`, `merchant`, `support`, `manager`, `admin`, and `super_admin`. Customers are standard buyers. Merchants own stores and manage store-scoped operations. Support users can access support-level tools. Managers gain broader operational access. Admins and super admins hold platform-wide powers, with super admins representing the highest control level.
+when the user lands on `/` or `/store/:storeSlug`. This improves perceived performance on the main shopping surface.
 
-Authentication is JWT-based. During signup or login, the server issues a token containing the user email, role, and optional store ID. The subject of the token is the user ID. The `requireAuth` middleware validates the token and reconstructs a `req.user` object. Higher-level middleware then reloads the user record and enforces allowed roles.
+### 14.2 Category and search behavior
 
-The admin middleware differentiates between several permission levels. `requireSupportOrAbove` allows merchant and above roles into the admin route group. `requireManagerOrAbove` is used for actions like creating or updating products and coupons and changing order state. `requireAdminOrAbove` is used for more sensitive actions like deleting products, deleting categories, managing merchants, or deleting users. `requireSuperAdmin` is available for top-level restrictions even though not every route uses it directly.
+Storefront categories are not loaded from `/api/admin/categories`. Instead, the UI derives category options from currently visible product data. That means storefront category menus reflect what is actually available in the selected store or the wider marketplace.
 
-## 27. Product APIs
+Supported storefront product filters:
 
-The product route group exposes public product listing and detail retrieval plus authenticated review submission and search-event recording. `GET /api/products` supports filtering by `storeId`, `storeSlug`, `category`, `search`, `inStock`, `includeDrafts`, `minRating`, and `maxPrice`. The route first constructs a MongoDB query, then applies some additional filtering in memory, especially for rating and max-price checks.
+- `search`
+- `category`
+- `inStock`
+- `minRating`
+- `maxPrice`
+- `storeSlug`
 
-`GET /api/products/:id` returns a single product and, when possible, enriches it with a compact store object containing name, slug, description, and logo. This makes product details more informative without forcing the client to perform a second store lookup.
+### 14.3 Product page
 
-`POST /api/products/search-events` records search telemetry in the `SearchEvent` collection. `POST /api/products/:id/reviews` requires authentication and either creates or replaces the current user’s review entry for that product. Review submissions include a rating and optional comment and are stored inside the product document itself.
+The product page:
 
-## 28. Cart APIs
+- loads `GET /api/products/:id`
+- displays product and store context
+- allows adding to cart
+- allows authenticated review submission with rating and optional comment
+- prefetches adjacent product data when navigating through recommendations
 
-The cart route group is fully authenticated. `GET /api/cart` returns the current user’s cart and enriches each line item with product and store details where the product still exists. `POST /api/cart/items` adds an item or increases quantity if it already exists. `PATCH /api/cart/items/:productId` applies a quantity delta rather than setting an absolute quantity. `DELETE /api/cart/items/:productId` removes a line item.
+### 14.4 Cart
 
-`POST /api/cart/checkout` creates orders from the current persisted server-side cart. It loads products, groups order items by store, applies coupon rules, calculates shipping, tax, and proportional discount per store order, creates one or more `Order` documents, increments coupon usage if necessary, clears the cart, and returns a grand summary.
+The storefront cart page:
 
-The cart checkout route is distinct from the direct client checkout route under `/api/orders/checkout`. The existence of both paths gives the platform flexibility: one path builds an order from the server-side cart state, and the other builds an order directly from a client-provided item list.
+- loads the current cart from `/api/cart`
+- supports quantity delta updates and line removal
+- submits coupon codes and shipping address data to `/api/cart/checkout`
 
-## 29. Order APIs
+### 14.5 Profile and wishlist
 
-Order APIs are authenticated and customer-scoped on the standard route group. `GET /api/orders` returns the current user’s orders sorted by recency. `GET /api/orders/:id` returns a specific order if it belongs to the current user.
+The customer profile page aggregates:
 
-`POST /api/orders/checkout` allows direct order creation from a client-supplied list of items. The backend resolves products from product IDs or, as a fallback, product titles. It validates stock, validates coupon eligibility and timing, calculates subtotal, shipping, tax, and discount, decrements stock, increments coupon usage, groups items by store, creates one or more orders, and returns a grand summary.
+- `/api/users/me`
+- `/api/wishlist`
 
-There are also post-order workflows. `POST /api/orders/:id/disputes` opens a dispute for an order if no active dispute already exists. `PATCH /api/orders/:id/return-refund-request` lets a customer request a return or refund for a delivered order. These workflows show that Cartify is designed with after-sales operations in mind, not only purchase conversion.
+The wishlist page supports:
 
-## 30. Wishlist APIs
+- item removal
+- price-drop and back-in-stock alert toggles
 
-Wishlist support is fully authenticated. `GET /api/wishlist` returns the user’s wishlist, normalizes stored item structure, enriches each entry with product and store data, and updates last-known price and stock snapshots so future alert-state calculations remain meaningful.
+### 14.6 Login and account creation
 
-`POST /api/wishlist/items` adds a product to the wishlist if it is not already present. `DELETE /api/wishlist/items/:productId` removes it. `PATCH /api/wishlist/items/:productId/alerts` lets the client toggle alert preferences for price-drop and back-in-stock notifications.
+The login page supports:
 
-The wishlist design is more advanced than a simple saved-products list. Each item stores alert preferences and remembers previous price and stock state. This allows the system to determine whether a meaningful state transition has occurred, such as a product becoming cheaper or returning to stock after previously being unavailable.
+- login
+- customer signup
+- merchant signup
+- password visibility toggles
+- redirect back to the originally requested route after authentication
 
-## 31. User APIs
+## 15. Admin Workflows
 
-The user route group is authenticated and focused on self-service account management. `GET /api/users/me` returns a normalized user profile that includes name, email, phone number, profile image URL, preference flags, addresses, and creation timestamp. `PATCH /api/users/me` allows updates to profile fields, preferences, and the address array.
+The admin experience is organized around operational domains rather than around raw collections.
 
-The address update behavior deserves attention. When addresses are supplied, the backend normalizes them, removes entries without a primary line, ensures only one default address remains, and promotes the first address to default if none are explicitly marked as default. This prevents inconsistent profile state.
+### 15.1 Dashboard
 
-`DELETE /api/users/me` deletes the account and related cart, wishlist, and order data. This is a strong operation and currently appears to perform hard deletion rather than soft deletion, which is important to understand from both compliance and recovery perspectives.
+The dashboard page consumes:
 
-## 32. Store APIs
+- `GET /api/admin/dashboard`
+- `GET /api/admin/orders?limit=5`
 
-The store route group supports public listing and authenticated self-management. `GET /api/stores` lists stores and supports filtering inactive stores out by default. It also supports a keyword search across name, slug, and description. `GET /api/stores/me` returns the authenticated user’s store if they have one. `PATCH /api/stores/me` lets the authenticated store owner update the store name, description, and logo URL.
+It renders:
 
-Store operations are important because they connect merchants to products and many admin-scoped features. The store slug is especially important since both Android and web clients use it as a stable routing and filtering identifier.
+- high-level counts
+- total revenue
+- stock value at buying price
+- expected profit from remaining stock
+- realized profit from sales
+- a 14-day sales trend chart
+- a recent orders table
+- low-stock alerts
 
-The backend also mounts store routes at `/stores` in addition to `/api/stores`. This provides compatibility with clients or links that expect store routes at the root path instead of the API namespace.
+### 15.2 Product management
 
-## 33. Admin APIs
+The products page supports:
 
-The admin route group is the richest part of the backend. It begins with `requireSupportOrAbove`, so every request requires an authenticated staff-capable user. The route group supports operational dashboards, growth metrics, profile management, password changes, products, categories, orders, shipping, users, merchants, disputes, sales reports, coupon management, and audit log retrieval.
+- paginated listing
+- search
+- category filtering
+- stock-state filtering
+- client-side sorting
+- create and update via modal
+- delete with confirmation
 
-The dashboard endpoint returns product, category, order, and user counts; total sales; low-stock products; sales trend data for the last 14 days; stock value at cost; expected profit potential; and realized profit from sales. The growth endpoint analyzes search events, orders, wishlist volume, and product count to produce funnel and engagement metrics across the last 30 days.
+The page also loads category options from `/api/admin/categories`.
 
-The product endpoints allow paginated listing, filtered listing, creation, update, and deletion. Product writes validate category usage against platform-level categories. Category endpoints are platform-admin restricted for writes and preserve referential consistency by updating products when category slugs change or when categories are deleted. Order endpoints support listing, detail retrieval, status changes, and shipping timeline updates. User endpoints support directory browsing, user creation, role changes, and deletion with protections such as preventing self-deletion and protecting super admin accounts. Merchant endpoints let platform admins provision merchants with associated stores and modify store state later.
+### 15.3 Categories
 
-Sales endpoints expose summary analytics plus CSV and PDF export. Coupon endpoints support listing, creation, update, and deletion within the appropriate store scope. Audit log retrieval is restricted to admin and above and supports filtering by action and entity type.
+Category administration is platform-wide. The page supports:
 
-## 34. Database Architecture
+- listing platform categories
+- create
+- update
+- delete
+- optional parent-child category hierarchy
 
-MongoDB is the system of record for all primary commerce and administration entities. Mongoose models define schemas, validation rules, indexes, and some transformation behavior such as removing password hashes from serialized user output. The database architecture is document-oriented and intentionally denormalized in some places, particularly for order items and product reviews, to simplify reads and preserve historical state.
+### 15.4 Orders and shipping
 
-The main collections are `users`, `stores`, `products`, `orders`, `carts`, `wishlists`, `categories`, `coupons`, `disputes`, `auditlogs`, and `searchevents`. Relationships are represented mostly by ObjectId references, but the system also stores snapshots inside embedded arrays where immutability or historical accuracy matters. For example, orders embed order items rather than pointing only to products, because product details can change after purchase and the order record still needs to reflect what was sold.
+The orders page supports:
 
-The database design supports both marketplace-level reporting and store-level operations. Several entities, including products, categories, coupons, orders, and disputes, can be scoped to a store. Orders can also include a `merchantUserId`, which helps support merchant-centric filtering and ownership checks even if store linkage is partial or evolving.
+- paginated order listing
+- detail drawer or modal flows based on query state
+- status changes
+- shipping updates
+- fulfillment timeline event append operations
 
-## 35. Collection-by-Collection Schema Notes
+### 15.5 Users and merchants
 
-### Users
+The user directory is platform-admin only and supports:
 
-The `User` collection stores identity and account settings. Key fields include `name`, `email`, `phoneNumber`, `passwordHash`, `role`, `profileImageUrl`, `storeId`, `preferences`, and `addresses`. Preferences include notification, dark mode, and low data mode flags. Addresses are embedded documents with labels, recipient information, location lines, and a default marker. The email field is unique and indexed. The role field is indexed because it drives permission filtering.
+- listing users
+- filtering by role or scope
+- creating users
+- changing roles
+- deleting users
 
-### Stores
+The merchants page supports:
 
-The `Store` collection stores merchant storefront identity. Fields include `name`, `slug`, `ownerUserId`, `description`, `logoUrl`, and `isActive`. The slug is unique and indexed, making it safe for routing and filtering. `ownerUserId` links the store to its merchant account.
+- merchant listing
+- merchant creation with store creation
+- store activation toggles
+- merchant store metadata updates
 
-### Products
+### 15.6 Disputes, growth, sales, coupons, and audit logs
 
-The `Product` collection stores catalog entries. Key fields include `title`, `description`, `category`, `storeId`, `imageUrl`, `images`, `costPrice`, `salePrice`, `stockQty`, `status`, `variants`, `sizes`, `colors`, `reviews`, and `price`. Products can belong to a store or exist as marketplace-level items. Reviews are embedded, and colors are validated as hex values. Images are limited to four entries. The status allows active or draft behavior.
+Other admin pages cover:
+
+- disputes and resolution
+- growth funnels and engagement trends
+- sales summaries and exports
+- coupon CRUD
+- audit log browsing
+- staff profile maintenance
+
+### 15.7 Admin layout behavior
+
+The admin shell has extra UX behavior worth noting:
+
+- route prefetching on hover and focus
+- recent order polling every 30 seconds
+- unread order notification counts stored in local storage
+- platform-only menu items hidden unless the user is `admin` or `super_admin`
+
+## 16. API Standards and Conventions
+
+The backend is pragmatic rather than formally uniform. A few conventions repeat often:
+
+### 16.1 Base namespace
+
+Most endpoints live under `/api`. Store routes are also mounted at `/stores` for compatibility.
+
+### 16.2 Response style
+
+The API does not enforce one global response envelope. Responses may be:
+
+- raw Mongoose documents
+- arrays of documents
+- paginated objects with `items`, `total`, `page`, and `limit`
+- action responses with `message`
+- custom summary objects
+- file downloads for CSV and PDF exports
+
+### 16.3 Common status codes
+
+| Status | Typical meaning |
+| --- | --- |
+| `200` | success |
+| `201` | created |
+| `400` | validation or malformed id failure |
+| `401` | missing or invalid token |
+| `403` | authenticated but forbidden |
+| `404` | resource not found |
+| `409` | business conflict such as duplicate email or stock failure |
+| `500` | unhandled server error |
+
+### 16.4 Pagination
+
+Most admin list endpoints accept:
+
+- `page`
+- `limit`
+
+and return:
+
+- `items`
+- `total`
+- `page`
+- `limit`
+
+The server caps `limit` at `100`.
+
+### 16.5 Validation
+
+Mutable routes use `express-validator`. Invalid request bodies usually return:
+
+```json
+{
+  "message": "Validation failed",
+  "errors": [ ... ]
+}
+```
+
+## 17. Authentication APIs
+
+### 17.1 Public authentication endpoints
+
+| Method | Path | Purpose | Notes |
+| --- | --- | --- | --- |
+| `POST` | `/api/auth/signup` | create customer account | also creates cart and wishlist |
+| `POST` | `/api/auth/login` | authenticate existing user | may recalculate role from env email lists |
+| `POST` | `/api/auth/signup-merchant` | create merchant account | also creates store |
+| `POST` | `/api/auth/merchant-signup` | merchant signup alias | compatibility path |
+| `POST` | `/api/auth/signup/merchant` | merchant signup alias | compatibility path |
+
+### 17.2 Login behavior
+
+On successful login, the API returns:
+
+- `token`
+- `user` with id, name, email, role, optional storeId, phone number, and profile image URL
+
+If the user's email appears in one of the env-driven privileged email lists, the backend updates the stored role to match the expected role before issuing the token.
+
+### 17.3 Customer signup behavior
+
+Customer signup provisions:
+
+- a `User`
+- a `Cart`
+- a `Wishlist`
+
+This means downstream customer routes can assume those documents exist or can be recreated safely if missing.
+
+### 17.4 Merchant signup behavior
+
+Merchant signup:
+
+- creates the user with role `merchant`
+- generates a unique store slug
+- creates the store
+- assigns the store back to the user
+- returns both user and store payloads
+
+The implementation cleans up the user if store creation fails after user creation.
+
+## 18. Catalog, Search, Review, and Store APIs
+
+### 18.1 Product APIs
+
+| Method | Path | Access | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/api/products` | public | product listing and filtering |
+| `GET` | `/api/products/:id` | public | product detail plus compact store info |
+| `POST` | `/api/products/search-events` | public | search telemetry recording |
+| `POST` | `/api/products/:id/reviews` | auth | create or replace current user's review |
+
+Supported product query parameters:
+
+- `storeId`
+- `storeSlug`
+- `includeDrafts`
+- `category`
+- `search`
+- `inStock`
+- `minRating`
+- `maxPrice`
+
+Notable behaviors:
+
+- products in `draft` status are hidden unless `includeDrafts=true`
+- `storeSlug` is resolved to `storeId` server-side
+- rating and max-price filtering happen in memory after the main query
+- reviews are embedded inside the product document and one user can only hold one active review entry per product
+
+### 18.2 Search telemetry
+
+`POST /api/products/search-events` is intentionally tolerant:
+
+- authentication is optional
+- the backend records search text, filters, store, and result count
+- anonymous searches are still logged
+
+These events power growth metrics later in the admin dashboard.
+
+### 18.3 Store APIs
+
+| Method | Path | Access | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/api/stores` | public | list active stores by default |
+| `GET` | `/api/stores/me` | auth | fetch the authenticated user's store |
+| `PATCH` | `/api/stores/me` | auth | update store name, description, and logo |
+| `GET` | `/stores` | public | compatibility alias for store listing |
+
+Supported store query parameters:
+
+- `q` keyword search
+- `includeInactive=true` for inactive stores
+
+The store list supports name, slug, and description search.
+
+### 18.4 Store and category relationships
+
+Products store `category` as a slug string, not as a category object id. This makes reads simple but means category rename and delete operations must propagate updates into products.
+
+## 19. Cart, Checkout, Order, Dispute, and Return APIs
+
+### 19.1 Cart APIs
+
+| Method | Path | Access | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/api/cart` | auth | load current server-side cart |
+| `POST` | `/api/cart/items` | auth | add item or increase quantity |
+| `PATCH` | `/api/cart/items/:productId` | auth | apply quantity delta |
+| `DELETE` | `/api/cart/items/:productId` | auth | remove line item |
+| `POST` | `/api/cart/checkout` | auth | create orders from current cart |
+
+Cart checkout behaviors:
+
+- products are resolved from stored product ids
+- cart lines are grouped by store
+- coupon discounts are prorated across store-specific orders
+- shipping is currently `6.99` when subtotal is positive
+- tax is currently `8%` of subtotal
+- the cart is cleared after successful checkout
+
+Built-in fallback coupon codes recognized even without a database coupon:
+
+- `SAVE10`
+- `WELCOME5`
+- `FREESHIP`
+
+Important implementation note: `POST /api/cart/checkout` creates orders but does not currently decrement product stock. Inventory decrement happens in the direct checkout endpoint under `/api/orders/checkout`.
+
+### 19.2 Order APIs
+
+| Method | Path | Access | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/api/orders` | auth | list current user's orders |
+| `GET` | `/api/orders/:id` | auth | get one owned order |
+| `POST` | `/api/orders/checkout` | auth | direct checkout from submitted item payload |
+| `POST` | `/api/orders/:id/disputes` | auth | open dispute for owned order |
+| `PATCH` | `/api/orders/:id/return-refund-request` | auth | request return or refund |
+
+Direct checkout behaviors:
+
+- accepts explicit `items`
+- resolves products by `productId` or title fallback
+- supports optional `variantSku`
+- validates stock before order creation
+- decrements stock after validation
+- supports coupon validation and usage limits
+- groups created orders by store
+
+### 19.3 Coupon behavior in checkout
+
+Database coupons support:
+
+- `percent`
+- `fixed`
+
+The code also contains built-in fallback coupon behavior for free shipping. That means checkout logic is slightly broader than the coupon schema itself.
+
+### 19.4 Disputes
+
+Dispute creation:
+
+- requires an owned order
+- prevents duplicate active disputes for the same order by the same customer
+- stores reason and optional message
+- starts in `open` state
+
+The schema includes a `merchantUserId` field, but the customer-side dispute creation path does not currently populate it.
+
+### 19.5 Returns and refunds
+
+Return or refund requests:
+
+- are only allowed when order status is `delivered`
+- record type, reason, details, and timestamps
+- start with request status `requested`
+
+## 20. User, Wishlist, and Profile APIs
+
+### 20.1 User profile APIs
+
+| Method | Path | Access | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/api/users/me` | auth | fetch normalized profile |
+| `PATCH` | `/api/users/me` | auth | update profile, preferences, and addresses |
+| `DELETE` | `/api/users/me` | auth | delete account and related data |
+
+User profile fields include:
+
+- name
+- email
+- phone number
+- profile image URL
+- preferences
+- addresses
+
+Address handling is opinionated:
+
+- blank addresses are removed
+- only one default address is retained
+- if no address is marked default, the first remaining address becomes default
+
+Account deletion is a hard delete. It removes:
+
+- the user
+- the user's cart
+- the user's wishlist
+- the user's orders
+
+There is no soft-delete or restore flow in the current backend.
+
+### 20.2 Wishlist APIs
+
+| Method | Path | Access | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/api/wishlist` | auth | load enriched wishlist |
+| `POST` | `/api/wishlist/items` | auth | add product to wishlist |
+| `DELETE` | `/api/wishlist/items/:productId` | auth | remove wishlist item |
+| `PATCH` | `/api/wishlist/items/:productId/alerts` | auth | toggle alert preferences |
+
+Wishlist items are more than bookmarks. Each item stores:
+
+- alert preferences for price drops and back-in-stock changes
+- `lastKnownPrice`
+- `lastKnownInStock`
+
+On read, the backend compares current product state with stored snapshots so the frontend can detect meaningful changes.
+
+## 21. Admin API Surface
+
+Every admin endpoint sits under `/api/admin` and first passes through `requireSupportOrAbove`.
+
+### 21.1 Dashboard and growth
+
+| Method | Path | Access | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/api/admin/dashboard` | staff | counts, revenue, stock value, profit, trend, low stock |
+| `GET` | `/api/admin/growth` | staff | funnel and engagement metrics |
+
+Dashboard metrics include:
+
+- product count
+- category count
+- order count
+- user count
+- total sales
+- stock value at cost
+- expected profit potential
+- realized profit from sales
+- 14-day sales trend
+- low-stock products
+
+Growth metrics include:
+
+- search session count from `SearchEvent`
+- placed and delivered orders
+- conversion rate
+- fulfillment rate
+- average order value
+- wishlist intent
+- customer totals
+- 30-day engagement map
+
+### 21.2 Staff profile
+
+| Method | Path | Access | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/api/admin/profile` | staff | fetch staff profile |
+| `PATCH` | `/api/admin/profile` | staff | update name and email |
+| `PATCH` | `/api/admin/profile/password` | staff | change password |
+
+### 21.3 Product administration
+
+| Method | Path | Access | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/api/admin/products` | staff | paginated product listing |
+| `POST` | `/api/admin/products` | merchant and above | create product |
+| `PUT` | `/api/admin/products/:id` | merchant and above | update product |
+| `DELETE` | `/api/admin/products/:id` | admin and above | delete product |
+
+Product filters include:
+
+- `category`
+- `search`
+- `stock=out|low|in`
+- `page`
+- `limit`
+
+Product write rules:
+
+- category must refer to a valid platform category or fall back to `general`
+- up to four images
+- up to 30 sizes
+- up to 20 hex colors
+- status limited to `active` or `draft`
+- audit logs are recorded for create, update, and delete
+
+### 21.4 Category administration
+
+| Method | Path | Access | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/api/admin/categories` | staff | list platform categories |
+| `POST` | `/api/admin/categories` | admin and above | create category |
+| `PUT` | `/api/admin/categories/:id` | admin and above | update category |
+| `DELETE` | `/api/admin/categories/:id` | admin and above | delete category |
+
+Category behaviors:
+
+- categories are platform-wide in the current admin implementation
+- parent-child hierarchy is supported through `parentId`
+- cyclic parent relationships are rejected
+- renaming a category updates product documents that still reference the old slug
+- deleting a category resets child categories to no parent and reassigns matching products to `general`
+
+### 21.5 Order operations
+
+| Method | Path | Access | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/api/admin/orders` | staff | paginated order listing |
+| `GET` | `/api/admin/orders/:id` | staff | order detail |
+| `PATCH` | `/api/admin/orders/:id/status` | merchant and above | update status |
+| `PATCH` | `/api/admin/orders/:id/shipping` | merchant and above | update shipping data |
+
+Supported order statuses:
+
+- `placed`
+- `processing`
+- `shipped`
+- `delivered`
+- `cancelled`
+
+Shipping update payloads can include:
+
+- `courier`
+- `trackingNumber`
+- `eta`
+- an optional timeline `event` object with `label` and `note`
+
+### 21.6 User and merchant administration
+
+| Method | Path | Access | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/api/admin/users` | platform admin | user directory |
+| `POST` | `/api/admin/users` | admin and above | create user |
+| `PATCH` | `/api/admin/users/:id/role` | admin and above | change role |
+| `DELETE` | `/api/admin/users/:id` | admin and above | delete user |
+| `GET` | `/api/admin/merchants` | admin and above | merchant directory |
+| `POST` | `/api/admin/merchants` | admin and above | create merchant and store |
+| `PATCH` | `/api/admin/merchants/:id` | admin and above | update merchant store metadata |
+
+User directory behavior:
+
+- unavailable to merchants
+- supports `search`
+- supports `scope=customers`
+- supports `scope=system`
+- supports explicit `role`
+
+Deletion protections:
+
+- a staff user cannot delete their own account
+- `super_admin` accounts cannot be deleted
+
+When a role is changed to `customer`, the backend ensures a cart and wishlist exist.
+
+### 21.7 Disputes, sales, coupons, and audit logs
+
+| Method | Path | Access | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/api/admin/disputes` | staff | dispute queue |
+| `PATCH` | `/api/admin/disputes/:id` | staff | update dispute state |
+| `GET` | `/api/admin/sales` | staff | sales summary |
+| `GET` | `/api/admin/sales/export.csv` | staff | CSV export |
+| `GET` | `/api/admin/sales/export.pdf` | staff | PDF export |
+| `GET` | `/api/admin/coupons` | staff | coupon list |
+| `POST` | `/api/admin/coupons` | merchant and above | create coupon |
+| `PUT` | `/api/admin/coupons/:id` | merchant and above | update coupon |
+| `DELETE` | `/api/admin/coupons/:id` | admin and above | delete coupon |
+| `GET` | `/api/admin/audit-logs` | admin and above | audit trail |
+
+Sales supports:
+
+- optional `from`
+- optional `to`
+- order count
+- gross sales
+- average order value
+- revenue grouped by status
+- top products
+- export limits of 2000 rows for CSV and 500 rows for PDF
+
+Coupon behaviors:
+
+- merchants are store-scoped
+- admins can operate globally
+- audit logs are written for coupon mutations
+
+Audit log filters:
+
+- `action`
+- `entityType`
+
+## 22. Data Model and Collections
+
+The backend uses Mongoose schemas in `backend/src/models`.
+
+### 22.1 Users
+
+Purpose: identity, preferences, addresses, and role metadata.
+
+Key fields:
+
+- `name`
+- `email` unique
+- `phoneNumber`
+- `passwordHash`
+- `role`
+- `profileImageUrl`
+- `storeId`
+- `preferences`
+- `addresses`
+
+Important notes:
+
+- emails are lowercased and unique
+- password hashes are stripped from JSON output
+- `storeId` links merchants to stores
+
+### 22.2 Stores
+
+Purpose: merchant storefront identity.
+
+Key fields:
+
+- `name`
+- `slug` unique
+- `ownerUserId`
+- `description`
+- `logoUrl`
+- `isActive`
+
+The unique slug is used heavily in routing and filtering.
+
+### 22.3 Products
+
+Purpose: catalog inventory.
+
+Key fields:
+
+- `title`
+- `description`
+- `category` slug string
+- `storeId`
+- `imageUrl`
+- `images`
+- `costPrice`
+- `salePrice`
+- `stockQty`
+- `status`
+- `variants`
+- `sizes`
+- `colors`
+- `reviews`
+- `price`
+
+Notable constraints:
+
+- max 4 images
+- max 20 colors
+- color format must be `#RRGGBB`
+- status is `active` or `draft`
+
+### 22.4 Orders
+
+Purpose: completed commercial transactions.
+
+Key fields:
+
+- `userId`
+- `storeId`
+- `merchantUserId`
+- embedded `items`
+- `subtotal`
+- `shipping`
+- `tax`
+- `discount`
+- `total`
+- `couponCode`
+- `shippingAddress`
+- `shippingDetails`
+- `status`
+- `returnRefundRequest`
+
+Orders embed line items instead of referencing live product state only. This is the correct choice for preserving commercial history.
+
+### 22.5 Carts
+
+Purpose: server-side pre-checkout basket.
+
+Key fields:
+
+- `userId` unique
+- `items[]`
+  - `productId`
+  - `quantity`
+
+### 22.6 Wishlists
+
+Purpose: customer purchase intent and alert tracking.
+
+Key fields:
+
+- `userId` unique
+- `items[]`
+  - `productId`
+  - alert flags
+  - `lastKnownPrice`
+  - `lastKnownInStock`
+
+### 22.7 Categories
+
+Purpose: catalog taxonomy.
+
+Key fields:
+
+- `name`
+- `slug` unique
+- `description`
+- `imageUrl`
+- `storeId`
+- `parentId`
+
+The current admin implementation treats categories as platform-level even though the schema supports `storeId`.
+
+### 22.8 Coupons
+
+Purpose: promotional rules.
+
+Key fields:
+
+- `storeId`
+- `code`
+- `description`
+- `discountType`
+- `discountValue`
+- `minOrderValue`
+- `startsAt`
+- `endsAt`
+- `maxUses`
+- `usesCount`
+- `isActive`
+
+Important note: `code` is globally unique at the schema level, even though the route logic often checks for duplicates inside the current store scope. That means two different stores cannot reuse the same coupon code.
+
+### 22.9 Disputes
+
+Purpose: post-purchase issue resolution.
+
+Key fields:
+
+- `orderId`
+- `storeId`
+- `customerUserId`
+- `merchantUserId`
+- `reason`
+- `message`
+- `status`
+- `resolutionNote`
+- `resolvedByUserId`
+- `resolvedAt`
+
+### 22.10 Audit logs
+
+Purpose: governance and traceability.
+
+Key fields:
+
+- `actorId`
+- `actorEmail`
+- `actorRole`
+- `action`
+- `entityType`
+- `entityId`
+- `details`
+
+### 22.11 Search events
+
+Purpose: lightweight growth telemetry.
+
+Key fields:
+
+- `userId`
+- `query`
+- `category`
+- `storeId`
+- `inStockOnly`
+- `minRating`
+- `maxPrice`
+- `resultCount`
+
+## 23. Reporting, Analytics, and Audit Logging
+
+Cartify includes several operational reporting layers.
+
+### 23.1 Dashboard metrics
+
+The dashboard endpoint aggregates:
+
+- counts across products, categories, orders, and users
+- total sales
+- cost-based stock value
+- expected margin still sitting in stock
+- realized profit from historical sales
+- low-stock inventory
+- 14-day sales trend
+
+### 23.2 Growth metrics
+
+The growth endpoint combines:
+
+- `SearchEvent`
+- `Order`
+- `Wishlist`
+- `User`
+- `Product`
+
+to produce:
+
+- sessions
+- wishlist intent
+- placed orders
+- delivered orders
+- conversion rate
+- fulfillment rate
+- average order value
+- 30-day engagement points
+
+These are product signals, not accounting truth. They are useful for trend analysis and operations, not for audited finance.
+
+### 23.3 Sales reporting
+
+Sales reporting provides:
+
+- summary totals
+- value by status
+- top products by revenue
+- CSV export
+- PDF export
+
+### 23.4 Audit logging
+
+`logAudit` is invoked after many sensitive admin actions, including:
+
+- product create, update, delete
+- category create, update, delete
+- order status and shipping updates
+- merchant create and update
+- dispute updates
+- user create, role change, delete
+- coupon create, update, delete
+
+Audit logging is best effort. Failures in audit persistence do not block the business action.
+
+## 24. Local Development Guide
+
+### 24.1 Prerequisites
+
+Recommended local prerequisites:
+
+- Node.js LTS
+- npm
+- MongoDB running locally or a reachable MongoDB URI
+
+### 24.2 Backend setup
+
+```bash
+cd backend
+npm install
+cp .env.example .env
+```
+
+Set your backend `.env`, then start:
+
+```bash
+npm run dev
+```
+
+The backend defaults to `http://localhost:4000`.
+
+### 24.3 Frontend setup
+
+```bash
+cd Admin
+npm install
+cp .env.example .env
+```
+
+Set:
+
+```env
+VITE_API_BASE_URL=http://localhost:4000/api
+```
+
+Start the frontend:
+
+```bash
+npm run dev
+```
+
+### 24.4 Useful backend scripts
+
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | start backend with nodemon |
+| `npm start` | start backend with node |
+| `npm run seed` | replace products with sample seed data |
+| `npm run migrate:stores` | run store backfill migration |
+| `npm run migrate:order-ownership` | backfill order ownership fields |
+
+### 24.5 Local smoke test sequence
+
+1. Start MongoDB.
+2. Start the backend.
+3. Open `GET /health` in browser or curl it.
+4. Start the frontend.
+5. Load the storefront.
+6. Create a customer account.
+7. Add a product to cart and verify `/api/cart`.
+8. Create a merchant account and verify `/api/stores/me`.
+9. Enter `/admin` with a staff-capable user.
+
+## 25. Deployment Guide
+
+The two web modules can be deployed independently.
+
+### 25.1 Backend deployment requirements
+
+At minimum, production needs:
+
+- a reachable MongoDB instance
+- `MONGODB_URI`
+- `JWT_SECRET`
+- appropriate role email lists
+- HTTPS in front of the API
+
+Recommended deployment characteristics:
+
+- process manager or container orchestration
+- structured stdout log capture
+- health monitoring against `/health`
+- restricted CORS instead of open default behavior
+
+### 25.2 Frontend deployment requirements
+
+The frontend is a static build produced by Vite:
+
+```bash
+cd Admin
+npm run build
+```
+
+Because the app uses `HashRouter`, it is friendly to static hosts without custom rewrite rules.
+
+Required frontend env:
+
+```env
+VITE_API_BASE_URL=https://your-backend-domain/api
+```
+
+### 25.3 Production configuration checklist
+
+- set a strong `JWT_SECRET`
+- use a production MongoDB cluster
+- ensure the frontend points at the correct `/api` base
+- tighten CORS allowed origins
+- enable TLS everywhere
+- verify privileged email lists before launch
+
+## 26. Operations Runbook
+
+### 26.1 Health checks
+
+Primary liveness endpoint:
+
+```http
+GET /health
+```
+
+Expected response:
+
+```json
+{
+  "ok": true,
+  "service": "cartify-backend"
+}
+```
+
+### 26.2 Common operational checks
+
+If something looks wrong, these are the fastest checks to run.
+
+#### Users cannot access expected admin pages
+
+Check:
+
+- JWT present in browser local storage
+- user role in database
+- env email lists that may override role on login
+
+#### Merchant sees no products
+
+Check:
+
+- merchant `storeId`
+- product `storeId`
+- store `isActive`
+- product `status`
+
+#### Product missing from storefront
+
+Check:
+
+- product status is not `draft`
+- category filters
+- store filters
+- `stockQty` if using in-stock filters
+
+#### Checkout fails
+
+Check:
+
+- cart is not empty
+- coupon validity
+- stock quantities
+- product ids still resolve
+- MongoDB write availability
+
+#### Growth numbers look surprising
+
+Check:
+
+- `SearchEvent` volume
+- whether the storefront is actually posting search telemetry
+- order volume and status distribution
+- wishlist document sizes
+
+### 26.3 Admin notification behavior
+
+The admin layout polls `/api/admin/orders` every 30 seconds to build recent order notifications. If notifications look stale:
+
+- confirm the polling endpoint responds
+- confirm order `createdAt` values are recent
+- clear the local storage "last seen" value if needed during testing
+
+### 26.4 Seeding and migrations
+
+Use `npm run seed` only in non-production environments unless you intentionally want to replace the product collection with sample data.
+
+Available one-off migrations:
+
+- `backfillStoreIds.js`
+- `backfillOrderOwnership.js`
+
+Review each script before running it in a shared environment.
+
+## 27. Security Notes and Hardening Guidance
+
+The current platform includes several good baseline practices:
+
+- passwords are hashed with bcrypt
+- JWT secrets are required
+- mutable endpoints use validation middleware
+- role checks are enforced server-side
+- audit logs exist for many sensitive admin operations
+
+That said, production hardening still has room to improve.
+
+### 27.1 Current security considerations
+
+- the frontend stores JWTs in local storage, so XSS prevention is critical
+- CORS is globally open by default
+- there is no visible rate limiting layer
+- there is no visible refresh token or token rotation flow
+- there is no visible CSRF layer, though bearer-token APIs without cookies reduce classic CSRF exposure
+- audit logging is best effort, not guaranteed
+- some multi-document flows are not wrapped in database transactions
+
+### 27.2 Recommended hardening steps
+
+1. Restrict CORS to trusted frontend origins.
+2. Add rate limiting to auth and mutation endpoints.
+3. Add security headers such as Helmet.
+4. Review frontend XSS exposure carefully because tokens live in local storage.
+5. Consider shorter token lifetimes plus refresh-token design if session security needs increase.
+6. Add transaction support for multi-step flows like merchant provisioning where appropriate.
+7. Add centralized structured logging and alerting.
+
+## 28. Testing and Quality Strategy
+
+The repository currently shows strong application behavior, but the backend and web modules do not include an established automated test suite in this repo.
+
+### 28.1 High-value backend test targets
+
+- auth signup and login
+- merchant signup and store creation
+- role recalculation by env email mapping
+- cart checkout and order splitting
+- direct checkout inventory decrement
+- duplicate dispute prevention
+- delivered-only return or refund requests
+- category rename propagation to products
+- RBAC boundaries on admin endpoints
+
+### 28.2 High-value frontend test targets
+
+- auth persistence and redirects
+- `ProtectedRoute` and `StaffRoute`
+- merchant signup fallback endpoint order
+- product CRUD forms
+- order status and shipping update flows
+- user and merchant management
+- sales export triggers
+- store context propagation through `?store=`
+
+### 28.3 Recommended manual regression checklist
+
+- anonymous storefront browsing
+- customer signup and login
+- merchant signup and admin access
+- product creation, update, and delete
+- category rename and delete
+- cart checkout
+- direct checkout
+- order status and shipping update
+- coupon create and redeem
+- dispute resolution
+- sales CSV and PDF export
+- audit log visibility
+
+## 29. Known Gaps and Recommendations
+
+This section documents real implementation caveats that future maintainers should know early.
+
+### 29.1 Cart checkout and direct checkout are not fully symmetric
+
+`POST /api/cart/checkout` creates orders but does not decrement stock, while `POST /api/orders/checkout` does decrement stock. That inconsistency can lead to inventory drift if both flows are used in production.
+
+### 29.2 Some analytics are broader than store scope
+
+Merchant-scoped dashboards still count some platform-wide values such as total users. Growth metrics also mix store-aware and global signals. That is acceptable for directional insight but should not be mistaken for strict merchant-isolated analytics.
+
+### 29.3 Coupon uniqueness is global
+
+Although coupons have a `storeId`, the schema makes `code` globally unique. If the product direction expects separate stores to reuse the same code names, the schema will need to change.
+
+### 29.4 Categories are represented by slug strings inside products
+
+This keeps reads simple but increases write-side complexity for category renames and deletes. The backend already handles propagation, but the tradeoff should remain explicit.
+
+### 29.5 Token storage is convenient but high-trust
+
+Local storage is simple for a SPA, but it makes frontend injection vulnerabilities more serious because tokens are directly accessible in the browser runtime.
+
+### 29.6 Audit logging is non-blocking
+
+This is good for availability, but it also means a successful admin action does not guarantee an audit record exists.
+
+### 29.7 There is no soft-delete strategy
+
+User deletion is destructive and removes related data. That may be correct for some environments, but it reduces recovery options and should be reviewed against compliance expectations.
+
+## 30. Conclusion
+
+Cartify's web platform is already more than a basic admin panel. It is a combined commerce and operations system with:
+
+- a real storefront
+- a role-aware admin dashboard
+- merchant provisioning
+- store-scoped operations
+- customer cart and order flows
+- post-order dispute and return handling
+- reporting, exports, and audit trails
+
+From an engineering point of view, its strongest qualities are:
+
+- one coherent backend for all clients
+- a practical role model with store scoping
+- a browser app that cleanly separates storefront and admin concerns while sharing infrastructure
+- a broad operational surface that already resembles a production commerce system
+
+The most important future improvements are consistency, hardening, and test coverage, especially around checkout, inventory, security, and analytics scope.
+
+## 31. Appendix A: Environment Variable Reference
+
+### Backend
+
+| Variable | Required | Default | Purpose |
+| --- | --- | --- | --- |
+| `PORT` | no | `4000` | backend listen port |
+| `NODE_ENV` | no | `development` | runtime mode |
+| `MONGODB_URI` | yes | none | MongoDB connection string |
+| `JWT_SECRET` | yes | none | signing secret for JWT |
+| `JWT_EXPIRES_IN` | no | `7d` | token lifetime |
+| `ADMIN_EMAILS` | no | empty | comma-separated admin emails |
+| `SUPER_ADMIN_EMAILS` | no | empty | comma-separated super admin emails |
+| `MANAGER_EMAILS` | no | empty | comma-separated manager emails |
+| `SUPPORT_EMAILS` | no | empty | comma-separated support emails |
+
+### Frontend
+
+| Variable | Required | Default | Purpose |
+| --- | --- | --- | --- |
+| `VITE_API_BASE_URL` | recommended | Render deployment URL | base URL for Axios API client |
+
+## 32. Appendix B: Endpoint Inventory
+
+### Public and auth
+
+- `GET /health`
+- `GET /`
+- `POST /api/auth/signup`
+- `POST /api/auth/login`
+- `POST /api/auth/signup-merchant`
+- `POST /api/auth/merchant-signup`
+- `POST /api/auth/signup/merchant`
+
+### Products and search
+
+- `GET /api/products`
+- `GET /api/products/:id`
+- `POST /api/products/search-events`
+- `POST /api/products/:id/reviews`
+
+### Cart
+
+- `GET /api/cart`
+- `POST /api/cart/items`
+- `PATCH /api/cart/items/:productId`
+- `DELETE /api/cart/items/:productId`
+- `POST /api/cart/checkout`
 
 ### Orders
 
-The `Order` collection captures completed checkout output. Fields include `userId`, `storeId`, `merchantUserId`, `items`, `subtotal`, `shipping`, `tax`, `discount`, `total`, `couponCode`, `shippingAddress`, `shippingDetails`, `status`, and `returnRefundRequest`. Items embed title, image, quantity, price, totals, and optional product, store, or merchant identifiers. Shipping details also include a timeline array, which supports multi-step fulfillment history.
-
-### Carts
-
-The `Cart` collection is a simple per-user document containing a unique `userId` and an array of items. Each item contains a `productId` and `quantity`. This is the backend representation of a server-side cart. The Android app also has a separate local cart store, so backend carts are most relevant when clients actively use the cart API route group.
-
-### Wishlists
-
-The `Wishlist` collection stores one document per user. Each document contains embedded items with `productId`, alert preferences, `lastKnownPrice`, and `lastKnownInStock`. This supports richer wishlist behavior than a simple bookmark list because the system can detect state transitions relevant to user alerts.
-
-### Categories
-
-The `Category` collection stores the platform taxonomy. Fields include `name`, `slug`, `description`, `imageUrl`, `storeId`, and `parentId`. In the current admin implementation, category write operations focus on platform categories where `storeId` is null, and product.category stores the slug string instead of an ObjectId reference. The schema also supports hierarchical relationships through `parentId`.
-
-### Coupons
-
-The `Coupon` collection stores promotional rules. Fields include `storeId`, `code`, `description`, `discountType`, `discountValue`, `minOrderValue`, `startsAt`, `endsAt`, `maxUses`, `usesCount`, and `isActive`. Coupons can be global or store-specific depending on store scope. The system also supports fallback hardcoded coupon codes for common promotions.
-
-### Disputes
-
-The `Dispute` collection represents customer-service disputes tied to orders. Fields include `orderId`, `storeId`, `customerUserId`, `merchantUserId`, `reason`, `message`, `status`, `resolutionNote`, `resolvedByUserId`, and `resolvedAt`. Status values cover open, in review, resolved, and rejected states.
-
-### Audit Logs
-
-The `AuditLog` collection is a governance and observability layer for sensitive admin actions. Each record stores the actor ID, actor email, actor role, action key, entity type, entity ID, and arbitrary details. This supports traceability across CRUD and operational changes.
-
-### Search Events
-
-The `SearchEvent` collection stores product-search telemetry. Fields include `userId`, `query`, `category`, `storeId`, `inStockOnly`, `minRating`, `maxPrice`, and `resultCount`. These events are later used by the growth dashboard to estimate sessions and funnel behavior.
-
-## 36. Business Rules and Domain Logic
-
-Several important business rules shape Cartify’s runtime behavior. First, new customer signup automatically provisions an empty cart and wishlist. This ensures downstream features can assume these documents exist or can be created lazily if absent. Merchant signup automatically creates a store and binds the merchant account to it through `storeId`.
-
-Second, checkout is store-aware. Whether checkout begins from the persisted cart or from a client-provided list of items, the backend groups items by store and creates one order per store bucket. This is crucial for a marketplace model because shipping, merchant fulfillment, reporting, and access control all become easier when store-specific order slices are preserved.
-
-Third, product category assignment in admin product creation and updates is limited to valid platform categories. This prevents arbitrary or misspelled category slugs from polluting the catalog taxonomy. When categories are renamed, products using the old category slug are migrated to the new slug. When a category is deleted, products pointing to it are reassigned to `general`.
-
-Fourth, coupons are validated against minimum order value and, for persisted coupons, also against activation state, start and end dates, and usage limits. The backend supports both database-stored coupons and fallback built-in coupon codes such as `SAVE10`, `WELCOME5`, and `FREESHIP`.
-
-Fifth, return and refund requests are restricted to delivered orders. Disputes cannot be duplicated when there is already an open or in-review dispute for the same order by the same customer. These rules keep after-sales workflows logically consistent.
-
-## 37. Security Design
-
-Security in Cartify begins with credential handling. Passwords are hashed using bcrypt before being stored. Plaintext passwords are never persisted in the database. Tokens are signed using a secret from the environment, not from source code. Missing environment secrets prevent the backend from starting.
-
-Route protection is layered. Basic authentication is handled through bearer tokens. Higher-value operations are protected with role-based middleware that queries the current user record instead of trusting only the JWT payload. This is important because it allows role changes made in the database to take effect even for users who already possess a token.
-
-The system also includes several governance-oriented security behaviors. Admin actions can be audited. Super admin deletion is blocked. Staff users cannot delete themselves through the admin user delete endpoint. Platform-only operations such as merchant management are explicitly gated to `admin` and `super_admin`.
-
-There are still some security considerations worth tracking. The mobile app stores local experience data in SharedPreferences rather than encrypted storage. The web app stores auth state in local storage. These are common design decisions for many prototypes and internal tools, but stronger storage strategies may be desirable for a hardened production deployment.
-
-## 38. Error Handling and Resilience
-
-The backend uses explicit validation for most write endpoints through `express-validator`. Invalid payloads usually return status 400 with a `"Validation failed"` message and the validator error array. ObjectId validity checks are performed before many record lookups, reducing unnecessary database work and avoiding ambiguous errors.
-
-The Android client is designed to keep the UI usable even when some remote calls fail. Product loading retains the last good response in memory. Backend repository methods cache recent responses for profile, orders, wishlist, cart, products, and stores. Some interactions, such as review submission, preserve user input locally even if server sync fails.
-
-The React app includes request progress tracking and a lightweight prefetch cache for GET requests. This improves perceived responsiveness and avoids redundant API calls during route transitions. On the backend, audit logging is deliberately nonblocking; failures in writing audit records do not break the main business flow.
-
-## 39. Setup, Local Development, and Deployment Notes
-
-To run the backend locally, create `backend/.env` with at least `MONGODB_URI` and `JWT_SECRET`. Optionally define `PORT`, `JWT_EXPIRES_IN`, and the role assignment email lists. Then run `npm install` and `npm run dev` inside `backend/`.
-
-To run the Android app, open the project in Android Studio, ensure `local.properties` provides `BACKEND_BASE_URL` if you want to override the default hosted backend, sync Gradle, and run the `app` module. The app already supports environment injection of the backend base URL through Gradle build config.
-
-To run the web app, install dependencies in `Admin/`, define `VITE_API_BASE_URL` if needed, and start Vite. The React app defaults to `https://ecommerce-adroid-app-backend.onrender.com/api` if no environment override is supplied.
-
-Deployment can be split by module. The backend is already wired for a hosted environment through environment variables and a hosted base URL. The web app can be deployed as a static bundle. The Android app can point either to local backend infrastructure or to a hosted API environment. Since all clients rely on the same backend contract, version coordination matters when changing endpoints or response shapes.
-
-## 40. Testing, Limitations, and Enhancement Opportunities
-
-The repository includes Android unit and instrumentation tests such as `CheckoutCalculationsTest`, `ProductInteractionUtilsTest`, and checkout screen tests. These indicate that at least some business and UI behaviors in the Android layer have test coverage. The backend and React app do not currently expose a similarly visible automated test suite in the inspected repository layout, which means those layers may rely more heavily on manual verification at present.
-
-There are also some architectural limitations visible in the current code. The Android app maintains a local cart while the backend also supports a server cart, so there is an overlap of responsibility that should be clarified long term. Some mobile settings and moderation flows are local-only and do not yet appear to synchronize with the backend. The order checkout route can resolve products by title when product IDs are missing, which is convenient but weaker than strict identifier-based resolution. The account delete route performs hard deletions, which may or may not align with future retention requirements.
-
-Despite those limitations, the project is already comprehensive. It implements a real multi-role commerce domain, separate customer and staff experiences, a broad backend surface, and a reasonably rich database model. The most natural enhancement directions would be stronger automated testing for backend and web flows, clearer unification of local versus server cart ownership, improved encryption or secure storage for sensitive client-side state, richer payment and shipment integrations, and broader observability around operational events.
-
-## API Endpoint Summary
-
-The following list summarizes the most important backend endpoints exposed by the current implementation.
-
-### Public and Customer Endpoints
-
-- `GET /health`: backend health probe.
-- `GET /`: backend root information.
-- `POST /api/auth/signup`: customer signup.
-- `POST /api/auth/login`: user login.
-- `POST /api/auth/signup-merchant`: merchant signup.
-- `POST /api/auth/merchant-signup`: merchant signup alias.
-- `POST /api/auth/signup/merchant`: merchant signup alias.
-- `GET /api/products`: product listing with filters.
-- `GET /api/products/:id`: single product with store details.
-- `POST /api/products/search-events`: search analytics event creation.
-- `POST /api/products/:id/reviews`: authenticated review upsert.
-- `GET /api/cart`: authenticated cart read.
-- `POST /api/cart/items`: add cart item.
-- `PATCH /api/cart/items/:productId`: change cart quantity by delta.
-- `DELETE /api/cart/items/:productId`: remove cart item.
-- `POST /api/cart/checkout`: checkout from server cart.
-- `GET /api/orders`: current user orders.
-- `GET /api/orders/:id`: single current user order.
-- `POST /api/orders/checkout`: direct checkout from client-provided items.
-- `POST /api/orders/:id/disputes`: open dispute.
-- `PATCH /api/orders/:id/return-refund-request`: request return or refund.
-- `GET /api/wishlist`: get wishlist.
-- `POST /api/wishlist/items`: add wishlist item.
-- `DELETE /api/wishlist/items/:productId`: remove wishlist item.
-- `PATCH /api/wishlist/items/:productId/alerts`: update wishlist alert preferences.
-- `GET /api/users/me`: current user profile.
-- `PATCH /api/users/me`: update profile, preferences, and addresses.
-- `DELETE /api/users/me`: delete current user account.
-- `GET /api/stores`: list stores.
-- `GET /api/stores/me`: current user store.
-- `PATCH /api/stores/me`: update current user store.
-- `GET /stores`: store listing alias.
-
-### Staff and Admin Endpoints
-
-- `GET /api/admin/dashboard`: operational dashboard.
-- `GET /api/admin/growth`: growth and funnel metrics.
-- `GET /api/admin/profile`: current staff profile.
-- `PATCH /api/admin/profile`: update staff profile.
-- `PATCH /api/admin/profile/password`: update staff password.
-- `GET /api/admin/products`: paginated product management list.
-- `POST /api/admin/products`: create product.
-- `PUT /api/admin/products/:id`: update product.
-- `DELETE /api/admin/products/:id`: delete product.
-- `GET /api/admin/categories`: list platform categories.
-- `POST /api/admin/categories`: create category.
-- `PUT /api/admin/categories/:id`: update category.
-- `DELETE /api/admin/categories/:id`: delete category.
-- `GET /api/admin/orders`: paginated order list.
-- `GET /api/admin/orders/:id`: order details.
-- `PATCH /api/admin/orders/:id/status`: update order status.
-- `PATCH /api/admin/orders/:id/shipping`: update shipment data and timeline.
-- `GET /api/admin/users`: user directory.
-- `POST /api/admin/users`: create user.
-- `PATCH /api/admin/users/:id/role`: change user role.
-- `DELETE /api/admin/users/:id`: delete user.
-- `GET /api/admin/merchants`: merchant directory.
-- `POST /api/admin/merchants`: create merchant and store.
-- `PATCH /api/admin/merchants/:id`: update merchant store state.
-- `GET /api/admin/disputes`: dispute list.
-- `PATCH /api/admin/disputes/:id`: update dispute resolution state.
-- `GET /api/admin/sales`: sales summary.
-- `GET /api/admin/sales/export.csv`: CSV sales export.
-- `GET /api/admin/sales/export.pdf`: PDF sales export.
-- `GET /api/admin/coupons`: coupon list.
-- `POST /api/admin/coupons`: create coupon.
-- `PUT /api/admin/coupons/:id`: update coupon.
-- `DELETE /api/admin/coupons/:id`: delete coupon.
-- `GET /api/admin/audit-logs`: audit log list.
-
-## Conclusion
-
-Cartify is already a full-stack commerce platform rather than a single mobile application. Its Android app provides a strong consumer shopping experience, its React app covers both storefront and staff workflows, and its backend enforces the marketplace domain with JWT-based authentication, role-aware access control, and MongoDB-backed persistence. The repository shows a clear effort to support real operational flows such as merchant provisioning, low-stock monitoring, coupon usage, disputes, exports, order fulfillment, and auditability.
-
-From an engineering perspective, the strongest qualities of the project are its coherent domain coverage, its separation of mobile, web, and backend concerns, and its role-aware backend design. The main areas to refine over time are cross-client state consistency, additional automated testing in the backend and web layers, and stronger production-grade security hardening for client-side storage. Even with those future improvements in mind, the current implementation already forms a solid foundation for a multi-role commerce product.
-
-## Appendix A: Detailed Android Screen Catalog
-
-The Android navigation graph is broad enough that it is useful to describe the user-facing role of each major screen independently. The products screen is the primary feed and acts as the home surface of the app. It is responsible for browsing, category filtering, store-aware inventory presentation, recently viewed content, and entry into product detail pages. It also exposes authentication prompts when a user wants to take a protected action before signing in.
-
-The categories screen is effectively a category browser and quick taxonomy explorer. It derives its content from the loaded product data instead of requesting a dedicated category endpoint from the backend. This means its behavior reflects the currently visible product set, which is especially useful in store mode because categories automatically become store-specific without requiring another API surface.
-
-The stores screen introduces marketplace segmentation by merchant. Instead of treating the catalog as one giant undifferentiated inventory pool, the app allows customers to browse active stores and then pivot the surrounding experience into that store’s context. This reinforces merchant identity and allows the platform to scale from a single-vendor application into a multi-vendor marketplace without changing the core navigation shell.
-
-The wishlist screen is positioned as a personalized holding area for purchase intent. It is useful for delayed conversion, price monitoring, and inventory return scenarios. Because wishlist items track alert preferences and last-known price and stock state, the screen can evolve into a stronger retention feature later without requiring a schema redesign.
-
-The cart screen works as the mobile staging area before checkout. Since the current implementation keeps cart state locally, it offers very fast quantity manipulation and immediate totals behavior. This also means that the cart screen is an important part of the user experience even before server-side cart synchronization becomes the dominant model.
-
-The checkout screen is a transactional confirmation surface. It receives totals, validates that the user is logged in, initiates server-side order creation, and then transitions into a checkout success view when order placement succeeds. The checkout success screen closes the conversion loop and gives the user a clear terminal state for the purchase flow.
-
-The orders screen is a post-purchase archive and tracking surface. It gives customers a way to verify purchase history and re-enter specific order details. The order details screen extends this by rendering lifecycle progress, line items, totals, and reorder affordances. Even in its current state, it establishes the structure needed for richer shipment tracking, cancellation windows, and post-purchase service flows.
-
-The profile screen functions both as an account page and as a lightweight customer hub. It exposes identity information, links into personal content such as wishlist and orders, and a product feed for continued exploration. This blended design helps reduce dead-end navigation because the profile area still encourages discovery and shopping activity.
-
-The settings screen consolidates state that is either personal or device-local. It is where low-data mode, address book management, and account security actions are surfaced. The help screen is more operational; it supports support interactions and moderation-oriented actions. The offers screen is best understood as a client-side experimentation and growth diagnostics surface, useful during product iteration and testing. The about screen provides a simple informational endpoint within the app.
-
-## Appendix B: Detailed Web Page Catalog
-
-The React application uses route composition to separate storefront and staff experiences, but the page inventory is worth reviewing because it shows the intended breadth of the platform. `StoreHomePage` functions as the public-facing market landing page in the browser. It presents the store or marketplace shopping surface and serves as an entry point for users who prefer desktop browsing or who discover the platform through links rather than mobile installation.
-
-`StoresPage` lists available stores and supports exploration by merchant identity. `StoreProductPage` presents individual products in a web context. `StoreCartPage`, `MyOrdersPage`, `StoreProfilePage`, and `StoreWishlistPage` replicate core customer account and shopping tasks in the browser. `HelpSafetyPage` rounds out the customer-facing route set with a support or trust-oriented page.
-
-On the staff side, `DashboardPage` presents top-level operational metrics. `ProductsPage` and `CategoriesPage` provide catalog administration. `OrdersPage` exposes fulfillment and status management. `UsersPage` and `MerchantsPage` support identity and store administration. `DisputesPage` covers post-purchase conflict handling. `GrowthDashboardPage` exposes engagement and funnel-oriented metrics derived from search and order behavior. `SalesPage` focuses on revenue reporting and exports. `CouponsPage` supports promotion management. `AuditLogsPage` provides a governance and accountability surface. `ProfilePage` allows staff users to view and manage their own profile details.
-
-This layout confirms that the web app is intended for both commerce and operations. It is not only a customer site and not only a back-office dashboard. That dual role is one of the defining characteristics of the repository.
-
-## Appendix C: Request Lifecycle Examples
-
-One of the clearest ways to understand Cartify is to follow a few request lifecycles from start to finish. Consider standard customer signup. A client submits name, email, password, and optionally phone number to `/api/auth/signup`. The backend validates the payload, ensures the email is not already in use, hashes the password, creates the user with the `customer` role, provisions an empty cart document, provisions an empty wishlist document, issues a JWT token, and returns both the token and a sanitized user payload. From that point onward, the client can behave as an authenticated customer without a second bootstrap step.
-
-Merchant signup is similar but includes store creation. The backend validates the merchant payload, creates a merchant user, generates a unique slug from the submitted store name, creates the store record, updates the user’s `storeId`, issues a JWT token, and returns both merchant and store information. This means merchant provisioning is self-contained inside one transaction-like flow, even though there is no explicit database transaction in the current code.
-
-Product browsing is relatively simple but still instructive. The client calls `/api/products` with optional filters such as store slug, category, search term, and stock state. The backend queries the `Product` collection, optionally resolves the store slug to a store ID, excludes draft products unless explicitly asked not to, and applies extra filtering for ratings and max price. The result is returned as a raw product list. The Android app then enriches that list into UI models, derives image galleries, calculates stock display values, and produces recommendation and category views.
-
-Direct checkout from the Android app demonstrates deeper domain behavior. The app submits a list of item payloads to `/api/orders/checkout`. The backend validates the array, tries to resolve each item to a real product, checks stock or variant stock, computes totals, validates coupons, decrements stock, groups items by store, creates one order per store bucket, and returns order IDs plus a grand summary. The app then clears the local cart and shows a success screen. The key point is that even though the mobile client passes a candidate order, the backend still performs authoritative validation and reshaping.
-
-An admin product update follows another important lifecycle. The web app submits an update request to `/api/admin/products/:id`. The backend validates permissions, checks that the category is valid if it changed, normalizes sizes, colors, images, and other fields, writes the updated product, records an audit log, and returns the changed product. This lifecycle illustrates the pattern used repeatedly across the staff surfaces: validation, scoped access check, business rule enforcement, persistence, then audit recording.
-
-## Appendix D: Data Relationship Narrative
-
-At the center of the data model is the `User` document. A user may be only a customer, or that user may also be linked to a `Store` through `storeId` when acting as a merchant. A store points back to its owning user through `ownerUserId`, making the merchant-store relationship bidirectional across two collections.
-
-Products can optionally point to a store. When they do, they become merchant-scoped inventory entries. Categories do not currently attach to products by ObjectId reference; instead, products store the category slug as a string. This makes category rename operations more involved, because product documents must be updated when a slug changes, but it also keeps product reads simple and removes the need for category joins in the most common catalog fetches.
-
-Orders connect customers, stores, and merchants. The top-level `Order` document points to the purchasing user and optionally to the store and merchant. Each embedded item can also carry store and merchant information, which makes downstream reporting more resilient and preserves context even if related entities later change. Disputes reference orders, customers, stores, and merchants to support after-sales investigation.
-
-Carts and wishlists are both anchored to a user. Carts are mutable staging areas for potential purchases. Wishlists are longer-lived intent containers with alert metadata. Coupons can be global or store-specific, which means they may apply at the marketplace level or only within a merchant context. Audit logs are linked to the acting user rather than the target entity, because they are meant to capture responsibility for sensitive changes.
-
-## Appendix E: Role-by-Role Capability Summary
-
-Customers can sign up, log in, browse products, explore stores, add items to a local cart, maintain a wishlist, place orders, view order history, request returns or refunds for delivered orders, open disputes, and manage their own profile and addresses. They are the baseline role and are intentionally limited to self-service operations.
-
-Merchants are operationally different from customers because they are tied to a store. In the admin route group they can access staff surfaces, but most data is filtered to their own store. They can manage products inside that scope, view and update their relevant orders, manage coupons scoped to their store, and update shipment details. They do not automatically receive full platform-wide visibility.
-
-Support users gain access to staff capabilities intended for service operations. They can enter the admin route group, inspect dashboard information, and work with disputes or order-related surfaces depending on the specific endpoint. However, more destructive actions remain reserved for higher roles.
-
-Managers can perform broader operational tasks than support users. Product creation and update, coupon creation and update, and order status changes are examples of actions protected by `requireManagerOrAbove`. This role represents a mid-level operations authority.
-
-Admins gain platform-wide powers. They can delete products and categories, manage merchants, manage user roles, access audit logs, and view or manage resources across stores instead of within only one store scope. Super admins sit above admins and represent the highest trust level. The current code especially protects super admin accounts from being deleted through admin user management.
-
-This layered model is important because it demonstrates that Cartify is not using a single monolithic admin flag. It supports graduated privilege and therefore can evolve toward more formal organizational operations.
-
-## Appendix F: Operational Runbook Notes
-
-From an operational perspective, the minimum backend readiness checks are simple but important. MongoDB connectivity must succeed, required environment variables must be present, and the `/health` endpoint should return `{ ok: true }`. Because the backend exits if MongoDB fails to connect, deployment monitors should treat process uptime as meaningful rather than assuming the service can partially operate without the database.
-
-If staff users report missing permissions, the first place to inspect is the environment-driven email role mapping. Since login can recalculate roles based on email address, a mismatch between expected role and actual role may come from the configured email lists rather than from a bug in route middleware. If a merchant is missing store-scoped data, checking the `storeId` field on the user record and the `ownerUserId` linkage on the store record is the next logical step.
-
-For product visibility issues, the most important checks are `status`, `storeId`, category slug validity, and stock quantity if the client is using in-stock filters. For wishlist anomalies, inspect the per-user wishlist document and verify whether products still exist, because the response model tolerates product references that may no longer resolve cleanly. For checkout failures, common causes include invalid coupons, insufficient stock, unresolved product identifiers, or empty cart state.
-
-Sales reporting depends entirely on order data, so inconsistent sales numbers should be investigated by checking whether orders were created with the correct totals, status values, and store assignments. Growth metrics depend on search-event logging and wishlist contents in addition to orders, so they represent engagement signals rather than purely financial truth.
-
-## Appendix G: Testing and Quality Strategy Suggestions
-
-The current repository shows the strongest test evidence in the Android layer. That is a good start, but the backend contains enough business logic that automated API tests would add substantial value. Candidate high-value backend test areas include auth signup and login, merchant signup, category slug migration behavior, coupon validation, direct checkout stock enforcement, dispute duplicate prevention, return/refund request gating, and admin role enforcement.
-
-For the web app, component and route-level tests would be most valuable around protected routes, auth persistence, merchant signup fallbacks, admin page data loading, and role-based redirects. Since much of the frontend complexity lies in permission-dependent views rather than isolated pure functions, integration-style tests would likely provide more confidence than extremely granular component tests alone.
-
-For Android, further investment could focus on auth continuation flows, store mode transitions, wishlist synchronization behavior, and checkout error handling. Because the mobile app intentionally mixes local-only experience state with backend-backed state, regression testing those boundaries would be particularly useful.
-
-In addition to automated tests, lightweight contract documentation between frontend and backend would be beneficial. The current codebase is readable enough to infer contracts directly, but as the project grows, explicit contract artifacts or schema validation would reduce accidental drift between the Android models, the React client, and the backend responses.
-
-## Appendix H: Architectural Tradeoffs
-
-Several tradeoffs in the current design appear intentional. The use of embedded order items sacrifices some normalization but preserves historical order accuracy and simplifies reporting. The use of local mobile experience storage introduces the possibility of multi-device inconsistency, but it significantly improves responsiveness and enables experimentation without expanding the backend too early.
-
-The presence of both server-side cart APIs and a local Android cart repository is another tradeoff. It gives the mobile team freedom to provide a fast local experience while the backend evolves toward stronger cross-device commerce consistency. The downside is conceptual duplication. Eventually the project may choose one cart authority or define a formal synchronization strategy.
-
-Using category slugs rather than category IDs in product documents makes catalog reads lightweight and keeps product payloads simple. The downside is that category rename and delete operations must propagate changes into products. The current admin route code already handles that, which means the team has accepted the write-side cost in exchange for simple read-side behavior.
-
-The environment-driven role override mechanism is operationally convenient because privileged staff access can be granted by configuration. The tradeoff is that login semantics depend partly on deployment configuration, so environment drift can create permission surprises if not carefully managed. This is manageable, but it should be documented for operators, which is one reason it is emphasized in this README.
+- `GET /api/orders`
+- `GET /api/orders/:id`
+- `POST /api/orders/checkout`
+- `POST /api/orders/:id/disputes`
+- `PATCH /api/orders/:id/return-refund-request`
+
+### Wishlist
+
+- `GET /api/wishlist`
+- `POST /api/wishlist/items`
+- `DELETE /api/wishlist/items/:productId`
+- `PATCH /api/wishlist/items/:productId/alerts`
+
+### Users
+
+- `GET /api/users/me`
+- `PATCH /api/users/me`
+- `DELETE /api/users/me`
+
+### Stores
+
+- `GET /api/stores`
+- `GET /api/stores/me`
+- `PATCH /api/stores/me`
+- `GET /stores`
+
+### Admin
+
+- `GET /api/admin/dashboard`
+- `GET /api/admin/growth`
+- `GET /api/admin/profile`
+- `PATCH /api/admin/profile`
+- `PATCH /api/admin/profile/password`
+- `GET /api/admin/products`
+- `POST /api/admin/products`
+- `PUT /api/admin/products/:id`
+- `DELETE /api/admin/products/:id`
+- `GET /api/admin/categories`
+- `POST /api/admin/categories`
+- `PUT /api/admin/categories/:id`
+- `DELETE /api/admin/categories/:id`
+- `GET /api/admin/orders`
+- `GET /api/admin/orders/:id`
+- `PATCH /api/admin/orders/:id/status`
+- `PATCH /api/admin/orders/:id/shipping`
+- `GET /api/admin/users`
+- `POST /api/admin/users`
+- `PATCH /api/admin/users/:id/role`
+- `DELETE /api/admin/users/:id`
+- `GET /api/admin/merchants`
+- `POST /api/admin/merchants`
+- `PATCH /api/admin/merchants/:id`
+- `GET /api/admin/disputes`
+- `PATCH /api/admin/disputes/:id`
+- `GET /api/admin/sales`
+- `GET /api/admin/sales/export.csv`
+- `GET /api/admin/sales/export.pdf`
+- `GET /api/admin/coupons`
+- `POST /api/admin/coupons`
+- `PUT /api/admin/coupons/:id`
+- `DELETE /api/admin/coupons/:id`
+- `GET /api/admin/audit-logs`
+
+## 33. Appendix C: Page Inventory
+
+| Page component | Route | Audience | Main data dependencies |
+| --- | --- | --- | --- |
+| `LoginPage` | `/login` | public | `/auth/*` |
+| `StoreHomePage` | `/`, `/store/:storeSlug` | customer | `/products`, `/stores` |
+| `StoresPage` | `/stores` | customer | `/stores` |
+| `StoreProductPage` | `/product/:id` | customer | `/products/:id`, `/cart/items`, `/products/:id/reviews` |
+| `StoreCartPage` | `/cart` | authenticated customer | `/cart`, `/cart/checkout` |
+| `MyOrdersPage` | `/my-orders` | authenticated customer | `/orders` |
+| `StoreProfilePage` | `/profile` | authenticated customer | `/users/me`, `/wishlist` |
+| `StoreWishlistPage` | `/wishlist` | authenticated customer | `/wishlist` |
+| `HelpSafetyPage` | `/help-safety` | public | static and support content |
+| `DashboardPage` | `/admin` | staff | `/admin/dashboard`, `/admin/orders` |
+| `ProductsPage` | `/admin/products` | staff | `/admin/products`, `/admin/categories` |
+| `CategoriesPage` | `/admin/categories` | staff | `/admin/categories` |
+| `OrdersPage` | `/admin/orders` | staff | `/admin/orders`, `/admin/orders/:id` |
+| `UsersPage` | `/admin/users` | platform admin | `/admin/users` |
+| `MerchantsPage` | `/admin/merchants` | platform admin | `/admin/merchants` |
+| `DisputesPage` | `/admin/disputes` | staff | `/admin/disputes` |
+| `GrowthDashboardPage` | `/admin/growth` | staff | `/admin/growth` |
+| `SalesPage` | `/admin/sales` | staff | `/admin/sales`, export endpoints |
+| `CouponsPage` | `/admin/coupons` | staff | `/admin/coupons` |
+| `AuditLogsPage` | `/admin/audit-logs` | platform admin | `/admin/audit-logs` |
+| `ProfilePage` | `/admin/profile` | staff | `/admin/profile`, `/stores/me` |
+
+## 34. Appendix D: Release Checklist
+
+Use this checklist before a production release of the web platform.
+
+1. Verify MongoDB connectivity in the target environment.
+2. Verify `JWT_SECRET` is set and not using placeholder values.
+3. Verify `VITE_API_BASE_URL` points to the correct backend `/api`.
+4. Confirm CORS configuration matches production frontend origins.
+5. Confirm privileged email lists reflect the intended admin staff.
+6. Run smoke tests for signup, login, cart, checkout, and admin entry.
+7. Verify at least one admin account can access `/admin/users`, `/admin/merchants`, and `/admin/audit-logs`.
+8. Verify merchant accounts only see store-scoped products, orders, coupons, and disputes.
+9. Verify CSV and PDF sales exports download correctly.
+10. Review whether seeding or migration scripts should be disabled or avoided in the release environment.
